@@ -57,7 +57,7 @@
         }
     },
     {
-        "name": "csv_to_pg_test",
+        "name": "csv_to_pg_sync",
         "description": "Test CSV to Postgres sync",
         "source": "sales_csv",
         "source_query": "",
@@ -68,42 +68,6 @@
             {
                 "type": "filter",
                 "condition": "amount > 100"
-            }
-        ],
-        "alerts": {
-            "on_failure": "none"
-        }
-    },
-    {
-        "name": "pg_to_pg_test",
-        "description": "Test Postgres to Postgres sync",
-        "source": "pg_warehouse",
-        "source_query": "select * from stg_sales",
-        "sink": "pg_sales_db",
-        "sink_table": "stg_sales_2",
-        "sink_mode": "replace",
-        "transforms": [
-            {
-                "type": "filter",
-                "condition": "amount <= 1000"
-            }
-        ],
-        "alerts": {
-            "on_failure": "none"
-        }
-    },
-    {
-        "name": "pg_to_parquet_test",
-        "description": "Test Postgres to Postgres sync",
-        "source": "pg_warehouse",
-        "source_query": "select * from stg_sales",
-        "sink": "s3_reports",
-        "sink_table": "stg_sales_2",
-        "sink_mode": "replace",
-        "transforms": [
-            {
-                "type": "filter",
-                "condition": "amount <= 1000"
             }
         ],
         "alerts": {

@@ -11,12 +11,6 @@ class PostgresConnector(BaseConnector):
         last_run = get_last_successful_run(pipeline_name)
         last_run_str = last_run.isoformat() if last_run else "1970-01-01 00:00:00"
         
-        # Simple string replacement for placeholder as it is intended for a timestamp constant in SQL
-        # However, for safety and following "parameterised queries" rule, we should ideally use params.
-        # But the prompt says "Replace {{last_run}} in source_query...".
-        # This usually means literal replacement.
-        # Actually, let's use parameterised query if possible, but the prompt says REPLACE.
-        # I'll replace it with the string.
         query = query.replace("{{last_run}}", last_run_str)
         
         conn = psycopg2.connect(

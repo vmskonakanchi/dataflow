@@ -33,7 +33,6 @@ def load_configs(config_dir: str) -> ResolvedConfig:
         try:
             with open(path, "r") as f:
                 data = json.load(f)
-            # Use TypeAdapter for top-level lists
             adapter = TypeAdapter(model_type)
             return adapter.validate_python(data)
         except json.JSONDecodeError as e:
@@ -53,7 +52,7 @@ def load_configs(config_dir: str) -> ResolvedConfig:
     pipelines_list = load_file(pipelines_path, List[PipelineConfig], "pipelines.json")
     cronjobs_list = load_file(cronjobs_path, List[CronJobConfig], "cronjobs.json")
 
-    # 1. Check uniqueness and build dictionaries
+    # 1. Check uniqueness and build dictionaries    
     sources_dict: Dict[str, SourceConfig] = {}
     for s in sources_list:
         if s.name in sources_dict:
