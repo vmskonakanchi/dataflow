@@ -2,8 +2,9 @@ import pymysql
 import pandas as pd
 from typing import Optional
 from .base import BaseConnector
-from ..config.models import SourceConfig, SinkConfig, MySQLSourceConfig
+from ..config.models import MySQLSourceConfig, MySQLSinkConfig
 from ..logger.run_log import get_last_successful_run
+
 
 @BaseConnector.register("mysql")
 class MySQLConnector(BaseConnector):
@@ -29,5 +30,45 @@ class MySQLConnector(BaseConnector):
         finally:
             conn.close()
 
-    def load(self, df: pd.DataFrame, sink: SinkConfig, table: str, mode: str, key: Optional[str] = None) -> int:
-        raise NotImplementedError("MySQL is source only in V1")
+    def load(self, df: pd.DataFrame, sink: MySQLSinkConfig, table: str, mode: str, key: Optional[str] = None) -> int:
+        conn = pymysql.connect(
+            host=sink.host,
+            port=sink.port,
+            db=sink.database,
+            user=sink.username,
+            password=sink.password,
+            charset='utf8mb4'
+        )
+        try:
+            with conn.cursor() as cursor:
+                if mode == "replace":
+                    cursor.execute(f"DROP TABLE IF EXISTS `{table}`")
+                    conn.commit()
+
+                # Build CREATE TABLE IF NOT EXISTS from df dtypes
+                col_defs = []
+                for col, dtype in zip(df.columns, df.dtypes):
+                    if "int" in str(dtype):
+                        sql_type = "BIGINT"
+                    elif "float" in str(dtype):
+                        sql_type = "DOUBLE"
+                    elif "datetime" in str(dtype):
+                        sql_type = "DATETIME"
+                    else:
+                        sql_type = "TEXT"
+                    col_defs.append(f"`{col}` {sql_type}")
+
+                create_sql = f"CREATE TABLE IF NOT EXISTS `{table}` ({', '.join(col_defs)})"
+                cursor.execute(create_sql)
+                conn.commit()
+
+                if mode == "upsert" and key:
+                    sql = f"INSERT INTO `{table}` ({', '.join(f'`{c}`' for c in df.columns)}) VALUES ({', '.join(['%s'] * len(df.columns))}) ON DUPLICATE KEY UPDATE {', '.join(f'`{c}`=VALUES(`{c}`)' for c in df.columns if c != key)}"
+                else:
+                    sql = f"INSERT INTO `{table}` ({', '.join(f'`{c}`' for c in df.columns)}) VALUES ({', '.join(['%s'] * len(df.columns))})"
+
+                cursor.executemany(sql, df.where(pd.notnull(df), None).values.tolist())
+                conn.commit()
+                return len(df)
+        finally:
+            conn.close()

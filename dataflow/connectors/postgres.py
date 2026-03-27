@@ -1,6 +1,6 @@
 import psycopg2
 import pandas as pd
-from typing import Optional, List
+from typing import Optional, List, Iterator
 from .base import BaseConnector
 from ..config.models import SourceConfig, SinkConfig, PostgresSourceConfig, PostgresSinkConfig
 from ..logger.run_log import get_last_successful_run
@@ -29,6 +29,28 @@ class PostgresConnector(BaseConnector):
                 return df
         finally:
             conn.close()
+    def extract_chunks(self, source: PostgresSourceConfig, query: str, pipeline_name: str, chunk_size: int) -> Iterator[pd.DataFrame]:
+        """True streaming: fetches chunk_size rows at a time from the server cursor."""
+        last_run = get_last_successful_run(pipeline_name)
+        last_run_str = last_run.isoformat() if last_run else "1970-01-01 00:00:00"
+        query = query.replace("{{last_run}}", last_run_str)
+
+        conn = psycopg2.connect(
+            host=source.host, port=source.port,
+            dbname=source.database, user=source.username, password=source.password
+        )
+        try:
+            with conn.cursor() as cursor:
+                cursor.execute(query)
+                columns = [desc[0] for desc in cursor.description]
+                while True:
+                    rows = cursor.fetchmany(chunk_size)
+                    if not rows:
+                        break
+                    yield pd.DataFrame(rows, columns=columns)
+        finally:
+            conn.close()
+
 
     def load(self, df: pd.DataFrame, sink: PostgresSinkConfig, table: str, mode: str, key: Optional[str] = None) -> int:
         schema = sink.schema_name or "public"

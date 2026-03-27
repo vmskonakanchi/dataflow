@@ -1,19 +1,64 @@
 [
   {
-    "name": "pg_warehouse",
+    "name": "pg_main",
     "type": "postgres",
     "host": "localhost",
     "port": 5432,
-    "database": "sales_db",
+    "database": "my_db",
     "username": "postgres",
-    "password": "root",
+    "password": "secret",
     "schema": "public"
+  },
+  {
+    "name": "mysql_app_db",
+    "type": "mysql",
+    "host": "localhost",
+    "port": 3306,
+    "database": "app_db",
+    "username": "root",
+    "password": "secret"
   },
   {
     "name": "sales_csv",
     "type": "csv",
-    "file_path": "configs/sample_data/sales.csv",
+    "file_path": "data/sales.csv",
     "delimiter": ",",
     "has_header": true
+  },
+  {
+    "name": "orders_parquet",
+    "type": "local_file",
+    "file_path": "data/orders.parquet",
+    "file_format": "parquet"
+  },
+  {
+    "name": "events_json",
+    "type": "local_file",
+    "file_path": "data/events.jsonl",
+    "file_format": "json"
+  },
+  {
+    "name": "s3_private",
+    "type": "s3",
+    "bucket": "my-data-lake",
+    "key": "orders/2024/",
+    "region": "ap-south-1",
+    "access_key": "YOUR_ACCESS_KEY",
+    "secret_key": "YOUR_SECRET_KEY",
+    "file_format": "parquet"
+  },
+  {
+    "name": "s3_public_dataset",
+    "type": "s3",
+    "bucket": "nyc-tlc",
+    "key": "trip data/yellow_tripdata_2023-01.parquet",
+    "region": "us-east-1",
+    "file_format": "parquet",
+    "public": true
+  },
+  {
+    "name": "duckdb_warehouse",
+    "type": "duckdb",
+    "file_path": "dataflow_warehouse.duckdb"
   }
 ]

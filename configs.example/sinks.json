@@ -1,5 +1,24 @@
 [
     {
+        "name": "pg_warehouse",
+        "type": "postgres",
+        "host": "localhost",
+        "port": 5432,
+        "database": "warehouse_db",
+        "username": "postgres",
+        "password": "secret",
+        "schema": "public"
+    },
+    {
+        "name": "mysql_target",
+        "type": "mysql",
+        "host": "localhost",
+        "port": 3306,
+        "database": "target_db",
+        "username": "root",
+        "password": "secret"
+    },
+    {
         "name": "duckdb_warehouse",
         "type": "duckdb",
         "file_path": "dataflow_warehouse.duckdb"
@@ -7,7 +26,7 @@
     {
         "name": "s3_reports",
         "type": "s3",
-        "bucket": "my-dataflow-reports",
+        "bucket": "my-reports-bucket",
         "prefix": "reports/",
         "region": "ap-south-1",
         "access_key": "YOUR_ACCESS_KEY",
@@ -15,13 +34,21 @@
         "file_format": "parquet"
     },
     {
-        "name": "pg_sales_db",
-        "type": "postgres",
-        "host": "localhost",
-        "port": 5433,
-        "database": "sales_down_db",
-        "username": "postgres",
-        "password": "root",
-        "schema": "public"
+        "name": "local_parquet_out",
+        "type": "local_file",
+        "directory": "./output",
+        "file_format": "parquet"
+    },
+    {
+        "name": "local_csv_out",
+        "type": "local_file",
+        "directory": "./output",
+        "file_format": "csv"
+    },
+    {
+        "name": "csv_export",
+        "type": "csv",
+        "file_path": "./output/export.csv",
+        "delimiter": ","
     }
 ]

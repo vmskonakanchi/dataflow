@@ -1,9 +1,9 @@
 [
     {
-        "name": "orders_daily_sync",
-        "description": "Sync orders from PG to DuckDB",
-        "source": "pg_warehouse",
-        "source_query": "SELECT * FROM stg_sales",
+        "name": "pg_to_duckdb_incremental",
+        "description": "Incremental sync from Postgres to DuckDB using last_run watermark",
+        "source": "pg_main",
+        "source_query": "SELECT * FROM orders WHERE updated_at > '{{last_run}}'",
         "sink": "duckdb_warehouse",
         "sink_table": "fact_orders",
         "sink_mode": "upsert",
@@ -17,15 +17,39 @@
                 "type": "rename",
                 "from": "cust_id",
                 "to": "customer_id"
-            },
+            }
+        ],
+        "alerts": {
+            "on_failure": "email",
+            "email": "admin@example.com",
+            "on_row_count_below": 100
+        }
+    },
+    {
+        "name": "pg_to_duckdb_full",
+        "description": "Full replace of a reference/lookup table",
+        "source": "pg_main",
+        "source_query": "SELECT * FROM dim_products",
+        "sink": "duckdb_warehouse",
+        "sink_table": "dim_products",
+        "sink_mode": "replace",
+        "transforms": [],
+        "alerts": {
+            "on_failure": "none"
+        }
+    },
+    {
+        "name": "mysql_to_pg",
+        "description": "Sync from MySQL app DB to Postgres warehouse",
+        "source": "mysql_app_db",
+        "source_query": "SELECT * FROM users WHERE created_at > '{{last_run}}'",
+        "sink": "pg_warehouse",
+        "sink_table": "stg_users",
+        "sink_mode": "append",
+        "transforms": [
             {
-                "type": "aggregate",
-                "group_by": [
-                    "region"
-                ],
-                "agg": {
-                    "amount": "SUM"
-                }
+                "type": "filter",
+                "condition": "status == 'active'"
             }
         ],
         "alerts": {
@@ -34,22 +58,45 @@
         }
     },
     {
-        "name": "csv_to_s3_sync",
-        "description": "Export sales CSV to S3 as Parquet",
+        "name": "s3_to_pg_batched",
+        "description": "Load large S3 parquet file to Postgres in 50k-row batches",
+        "source": "s3_private",
+        "source_query": "",
+        "sink": "pg_warehouse",
+        "sink_table": "raw_events",
+        "sink_mode": "replace",
+        "batch_size": 50000,
+        "transforms": [],
+        "alerts": {
+            "on_failure": "none"
+        }
+    },
+    {
+        "name": "s3_public_to_duckdb",
+        "description": "Load a public S3 dataset (requester-pays) into DuckDB",
+        "source": "s3_public_dataset",
+        "source_query": "",
+        "sink": "duckdb_warehouse",
+        "sink_table": "nyc_taxi_2023",
+        "sink_mode": "replace",
+        "batch_size": 50000,
+        "transforms": [],
+        "alerts": {
+            "on_failure": "none"
+        }
+    },
+    {
+        "name": "csv_to_pg",
+        "description": "Load a local CSV file into Postgres",
         "source": "sales_csv",
         "source_query": "",
-        "sink": "s3_reports",
-        "sink_table": "sales_export",
+        "sink": "pg_warehouse",
+        "sink_table": "stg_sales",
         "sink_mode": "replace",
         "transforms": [
             {
                 "type": "filter",
-                "condition": "status == 'active'"
-            },
-            {
-                "type": "rename",
-                "from": "id",
-                "to": "record_id"
+                "condition": "amount > 0"
             }
         ],
         "alerts": {
@@ -57,19 +104,66 @@
         }
     },
     {
-        "name": "csv_to_pg_sync",
-        "description": "Test CSV to Postgres sync",
-        "source": "sales_csv",
-        "source_query": "",
-        "sink": "pg_sales_db",
-        "sink_table": "stg_sales",
+        "name": "pg_to_s3_parquet",
+        "description": "Export Postgres table to S3 as Parquet",
+        "source": "pg_main",
+        "source_query": "SELECT * FROM fact_orders",
+        "sink": "s3_reports",
+        "sink_table": "fact_orders_export",
         "sink_mode": "replace",
-        "transforms": [
-            {
-                "type": "filter",
-                "condition": "amount > 100"
-            }
-        ],
+        "transforms": [],
+        "alerts": {
+            "on_failure": "none"
+        }
+    },
+    {
+        "name": "pg_to_csv",
+        "description": "Export query result to a local CSV file",
+        "source": "pg_main",
+        "source_query": "SELECT id, name, amount FROM orders WHERE status = 'completed'",
+        "sink": "csv_export",
+        "sink_table": "completed_orders",
+        "sink_mode": "replace",
+        "transforms": [],
+        "alerts": {
+            "on_failure": "none"
+        }
+    },
+    {
+        "name": "duckdb_to_pg",
+        "description": "Push aggregated DuckDB results back to Postgres",
+        "source": "duckdb_warehouse",
+        "source_query": "SELECT region, SUM(amount) as total FROM fact_orders GROUP BY region",
+        "sink": "pg_warehouse",
+        "sink_table": "region_summary",
+        "sink_mode": "replace",
+        "transforms": [],
+        "alerts": {
+            "on_failure": "none"
+        }
+    },
+    {
+        "name": "pg_to_local_parquet",
+        "description": "Dump Postgres table locally as Parquet for archiving",
+        "source": "pg_main",
+        "source_query": "SELECT * FROM logs WHERE created_at > '{{last_run}}'",
+        "sink": "local_parquet_out",
+        "sink_table": "logs",
+        "sink_mode": "append",
+        "transforms": [],
+        "alerts": {
+            "on_failure": "none"
+        }
+    },
+    {
+        "name": "pg_to_mysql",
+        "description": "Sync from Postgres to MySQL (cross-database)",
+        "source": "pg_main",
+        "source_query": "SELECT * FROM customers",
+        "sink": "mysql_target",
+        "sink_table": "customers",
+        "sink_mode": "replace",
+        "transforms": [],
         "alerts": {
             "on_failure": "none"
         }

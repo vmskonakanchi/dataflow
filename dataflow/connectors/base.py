@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 import pandas as pd
-from typing import Dict, Type, Optional
+from typing import Dict, Type, Optional, Iterator
 from ..config.models import SourceConfig, SinkConfig
 
 class BaseConnector(ABC):
@@ -9,6 +9,12 @@ class BaseConnector(ABC):
     @abstractmethod
     def extract(self, source: SourceConfig, query: str, pipeline_name: str) -> pd.DataFrame:
         pass
+
+    def extract_chunks(self, source: SourceConfig, query: str, pipeline_name: str, chunk_size: int) -> Iterator[pd.DataFrame]:
+        """Default: loads fully then yields slices. Override for true streaming."""
+        df = self.extract(source, query, pipeline_name)
+        for i in range(0, len(df), chunk_size):
+            yield df.iloc[i:i + chunk_size]
 
     @abstractmethod
     def load(self, df: pd.DataFrame, sink: SinkConfig, table: str, mode: str, key: Optional[str] = None) -> int:

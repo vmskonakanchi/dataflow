@@ -473,7 +473,7 @@ export default function App() {
                               <SelectItem value="postgres">PostgreSQL</SelectItem>
                               <SelectItem value="mysql">MySQL</SelectItem>
                               <SelectItem value="csv">CSV File</SelectItem>
-                              <SelectItem value="rest_api">REST API</SelectItem>
+                              <SelectItem value="local_file">Local File (Parquet/CSV/JSON)</SelectItem>
                               <SelectItem value="s3">AWS S3</SelectItem>
                             </SelectContent>
                           </Select>
@@ -580,9 +580,9 @@ export default function App() {
                               <SelectValue placeholder="Select type" />
                             </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value="csv">Local CSV</SelectItem>
+                              <SelectItem value="local_file">Local File (Parquet/CSV/JSON)</SelectItem>
                               <SelectItem value="postgres">PostgreSQL</SelectItem>
-                              <SelectItem value="s3">AWS S3 (Parquet)</SelectItem>
+                              <SelectItem value="s3">AWS S3</SelectItem>
                               <SelectItem value="duckdb">DuckDB File</SelectItem>
                             </SelectContent>
                           </Select>

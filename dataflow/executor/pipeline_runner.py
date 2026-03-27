@@ -10,7 +10,7 @@ from ..transforms.base import BaseTransform
 # Import all transforms to ensure they are registered
 from ..transforms import filter, rename, aggregate, join
 # Import all connectors to ensure they are registered
-from ..connectors import postgres, mysql, csv_connector, rest_api, duckdb_connector, s3_connector
+from ..connectors import postgres, mysql, csv_connector, duckdb_connector, s3_connector, local_file_connector
 from ..logger.run_log import log_run_start, log_run_success, log_run_failure
 from ..alerts.email_alert import send_failure_alert, send_row_count_alert
 
@@ -47,42 +47,54 @@ def run_pipeline(pipeline_name: str, resolved_config: ResolvedConfig) -> RunResu
     rows_written = 0
     
     try:
-        # 1. Extract
-        step = "extract"
         connector = BaseConnector.get(source_config.type)
-        df = connector.extract(source_config, pipeline.source_query, pipeline_name)
-        rows_extracted = len(df)
-        
-        # 2. Transform
-        step = "transform"
-        for t_config in pipeline.transforms:
-            # Instantiate transform with config
-            transform_class = BaseTransform.get(t_config.type)
-            # We need to map the pydantic config to the constructor args
-            if t_config.type == "filter":
-                transform = transform_class(condition=t_config.condition)
-            elif t_config.type == "rename":
-                transform = transform_class(from_col=t_config.from_col, to_col=t_config.to_col)
-            elif t_config.type == "aggregate":
-                transform = transform_class(group_by=t_config.group_by, agg=t_config.agg)
-            elif t_config.type == "join":
-                transform = transform_class(
-                    right_source=t_config.right_source,
-                    right_query=t_config.right_query,
-                    join_type=t_config.join_type,
-                    on=t_config.on
-                )
-            else:
-                raise ValueError(f"Unknown transform type: {t_config.type}")
-            
-            df = transform.apply(df, resolved_config, pipeline_name)
-            
-        # 3. Load
-        step = "load"
         sink_connector = BaseConnector.get(sink_config.type)
-        rows_written = sink_connector.load(
-            df, sink_config, pipeline.sink_table, pipeline.sink_mode, pipeline.sink_key
-        )
+
+        def _apply_transforms(df):
+            step = "transform"
+            for t_config in pipeline.transforms:
+                transform_class = BaseTransform.get(t_config.type)
+                if t_config.type == "filter":
+                    transform = transform_class(condition=t_config.condition)
+                elif t_config.type == "rename":
+                    transform = transform_class(from_col=t_config.from_col, to_col=t_config.to_col)
+                elif t_config.type == "aggregate":
+                    transform = transform_class(group_by=t_config.group_by, agg=t_config.agg)
+                elif t_config.type == "join":
+                    transform = transform_class(
+                        right_source=t_config.right_source,
+                        right_query=t_config.right_query,
+                        join_type=t_config.join_type,
+                        on=t_config.on
+                    )
+                else:
+                    raise ValueError(f"Unknown transform type: {t_config.type}")
+                df = transform.apply(df, resolved_config, pipeline_name)
+            return df
+
+        if pipeline.batch_size:
+            # Streaming mode: extract chunk → transform → load, never holding full dataset
+            step = "extract/transform/load"
+            batch_num = 0
+            for chunk in connector.extract_chunks(source_config, pipeline.source_query, pipeline_name, pipeline.batch_size):
+                rows_extracted += len(chunk)
+                chunk = _apply_transforms(chunk)
+                mode = pipeline.sink_mode if batch_num == 0 else "append"
+                written = sink_connector.load(chunk, sink_config, pipeline.sink_table, mode, pipeline.sink_key)
+                rows_written += written
+                batch_num += 1
+                print(f"Batch {batch_num}: {written} rows written ({rows_written} total)")
+        else:
+            # Standard mode: extract all → transform all → load all
+            step = "extract"
+            df = connector.extract(source_config, pipeline.source_query, pipeline_name)
+            rows_extracted = len(df)
+            step = "transform"
+            df = _apply_transforms(df)
+            step = "load"
+            rows_written = sink_connector.load(
+                df, sink_config, pipeline.sink_table, pipeline.sink_mode, pipeline.sink_key
+            )
         
         # 4. Success
         log_run_success(run_id, rows_extracted, rows_written)

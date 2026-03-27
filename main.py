@@ -28,7 +28,7 @@ def validate(config_dir: str):
         sys.exit(1)
 
 @cli.command()
-@click.option("--pipeline", required=True, help="Name of the pipeline to run")
+@click.option("-p", "--pipeline", required=True, help="Name of the pipeline to run")
 @click.option("--config-dir", default="./configs", help="Path to config directory")
 def run(pipeline: str, config_dir: str):
     """Run a pipeline immediately."""
@@ -71,8 +71,8 @@ def schedule(config_dir: str):
         sys.exit(1)
 
 @cli.command()
-@click.option("--pipeline", required=True, help="Name of the pipeline")
-@click.option("--limit", default=10, help="Number of runs to show")
+@click.option("-p", "--pipeline", required=True, help="Name of the pipeline")
+@click.option("-n", "--limit", default=10, help="Number of runs to show")
 @click.option("--config-dir", default="./configs", help="Path to config directory")
 def history(pipeline: str, limit: int, config_dir: str):
     """Show run history for a pipeline."""

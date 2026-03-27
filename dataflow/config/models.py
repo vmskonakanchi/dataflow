@@ -33,16 +33,29 @@ class CSVSourceConfig(SourceConfigBase):
     delimiter: str = ","
     has_header: bool = True
 
-class RestApiSourceConfig(SourceConfigBase):
-    type: Literal["rest_api"]
-    url: str
-    method: Literal["GET", "POST"]
-    headers: Optional[Dict[str, str]] = None
-    auth_type: Optional[Literal["none", "bearer", "basic"]] = "none"
-    auth_token: Optional[str] = None
+class LocalFileSourceConfig(SourceConfigBase):
+    type: Literal["local_file"]
+    file_path: str
+    file_format: Literal["parquet", "csv", "json"] = "parquet"
+    delimiter: str = ","       # used when file_format is csv
+    has_header: bool = True    # used when file_format is csv
+
+class S3SourceConfig(SourceConfigBase):
+    type: Literal["s3"]
+    bucket: str
+    key: str
+    region: str = "us-east-1"
+    access_key: Optional[str] = None
+    secret_key: Optional[str] = None
+    file_format: Literal["parquet", "csv", "json"] = "parquet"
+    public: bool = False  # set true for public requester-pays buckets (adds RequestPayer='requester')
+
+class DuckDBSourceConfig(SourceConfigBase):
+    type: Literal["duckdb"]
+    file_path: str
 
 SourceConfig = Annotated[
-    Union[PostgresSourceConfig, MySQLSourceConfig, CSVSourceConfig, RestApiSourceConfig],
+    Union[PostgresSourceConfig, MySQLSourceConfig, CSVSourceConfig, LocalFileSourceConfig, S3SourceConfig, DuckDBSourceConfig],
     Field(discriminator="type")
 ]
 
@@ -63,6 +76,19 @@ class DuckDBSinkConfig(SinkConfigBase):
     type: Literal["duckdb"]
     file_path: str
 
+class MySQLSinkConfig(SinkConfigBase):
+    type: Literal["mysql"]
+    host: str
+    port: Annotated[int, Field(ge=1, le=65535)] = 3306
+    database: str
+    username: str
+    password: str
+
+class CSVSinkConfig(SinkConfigBase):
+    type: Literal["csv"]
+    file_path: str
+    delimiter: str = ","
+    mode: Literal["replace", "append"] = "replace"  # replace overwrites, append adds rows
 class S3SinkConfig(SinkConfigBase):
     type: Literal["s3"]
     bucket: str
@@ -72,8 +98,13 @@ class S3SinkConfig(SinkConfigBase):
     secret_key: str
     file_format: Literal["parquet", "csv", "json"]
 
+class LocalFileSinkConfig(SinkConfigBase):
+    type: Literal["local_file"]
+    directory: str  # Directory to write the file
+    file_format: Literal["parquet", "csv", "json"] = "parquet"
+
 SinkConfig = Annotated[
-    Union[PostgresSinkConfig, DuckDBSinkConfig, S3SinkConfig],
+    Union[PostgresSinkConfig, MySQLSinkConfig, DuckDBSinkConfig, S3SinkConfig, LocalFileSinkConfig, CSVSinkConfig],
     Field(discriminator="type")
 ]
 
@@ -125,6 +156,7 @@ class PipelineConfig(BaseModel):
     sink_key: Optional[str] = None
     transforms: List[TransformConfig] = []
     alerts: AlertConfig
+    batch_size: Optional[int] = Field(default=None, ge=1000, description="Rows per batch. If set, loads in chunks to avoid OOM.")
 
     @model_validator(mode="after")
     def validate_sink_key(self) -> 'PipelineConfig':
