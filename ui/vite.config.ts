@@ -8,7 +8,9 @@ import path from 'path'
 export default defineConfig({
   plugins: [
     react(),
-    babel({ presets: [reactCompilerPreset()] }),
+    babel({ 
+      presets: [reactCompilerPreset()]
+    }),
     tailwindcss(),
   ],
   resolve: {
@@ -16,4 +18,19 @@ export default defineConfig({
       "@": path.resolve(__dirname, "./src"),
     },
   },
+  build: {
+    chunkSizeWarningLimit: 1200,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules')) {
+            if (id.includes('react')) return 'vendor-react';
+            if (id.includes('codemirror') || id.includes('uiw')) return 'vendor-editor';
+            if (id.includes('lucide') || id.includes('radix-ui')) return 'vendor-ui';
+            return 'vendor';
+          }
+        }
+      }
+    }
+  }
 })
