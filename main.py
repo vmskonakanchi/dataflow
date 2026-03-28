@@ -5,6 +5,7 @@ import time
 from dataflow.config.loader import load_configs, ConfigError
 from dataflow.scheduler.runner import run_now, start_scheduler
 from dataflow.logger.run_log import get_run_history
+from dataflow.config.database import init_db as db_init
 
 @click.group()
 def cli():
@@ -12,11 +13,16 @@ def cli():
     pass
 
 @cli.command()
-@click.option("--config-dir", default="./configs", help="Path to config directory")
-def validate(config_dir: str):
-    """Load and validate all 4 config files."""
+def init_db():
+    """Initialize the database tables."""
+    db_init()
+    click.echo("Database initialized.")
+
+@cli.command()
+def validate():
+    """Load and validate all configuration from the database."""
     try:
-        resolved = load_configs(config_dir)
+        resolved = load_configs()
         click.echo(f"Sources:    {len(resolved.sources)} loaded  [{', '.join(resolved.sources.keys())}]")
         click.echo(f"Sinks:      {len(resolved.sinks)} loaded  [{', '.join(resolved.sinks.keys())}]")
         click.echo(f"Pipelines:  {len(resolved.pipelines)} loaded  [{', '.join(resolved.pipelines.keys())}]")
@@ -29,13 +35,12 @@ def validate(config_dir: str):
 
 @cli.command()
 @click.option("-p", "--pipeline", required=True, help="Name of the pipeline to run")
-@click.option("--config-dir", default="./configs", help="Path to config directory")
-def run(pipeline: str, config_dir: str):
+def run(pipeline: str):
     """Run a pipeline immediately."""
     try:
-        resolved = load_configs(config_dir)
+        resolved = load_configs()
         if pipeline not in resolved.pipelines:
-            click.echo(f"Error: Pipeline '{pipeline}' not found in configs.", err=True)
+            click.echo(f"Error: Pipeline '{pipeline}' not found in database.", err=True)
             sys.exit(1)
             
         pipeline_config = resolved.pipelines[pipeline]
@@ -59,11 +64,10 @@ def run(pipeline: str, config_dir: str):
         sys.exit(1)
 
 @cli.command()
-@click.option("--config-dir", default="./configs", help="Path to config directory")
-def schedule(config_dir: str):
+def schedule():
     """Start the scheduler."""
     try:
-        resolved = load_configs(config_dir)
+        resolved = load_configs()
         click.echo("Starting scheduler...")
         start_scheduler(resolved)
     except ConfigError as e:
@@ -73,8 +77,7 @@ def schedule(config_dir: str):
 @cli.command()
 @click.option("-p", "--pipeline", required=True, help="Name of the pipeline")
 @click.option("-n", "--limit", default=10, help="Number of runs to show")
-@click.option("--config-dir", default="./configs", help="Path to config directory")
-def history(pipeline: str, limit: int, config_dir: str):
+def history(pipeline: str, limit: int):
     """Show run history for a pipeline."""
     runs = get_run_history(pipeline, limit)
     if not runs:
@@ -105,11 +108,10 @@ def history(pipeline: str, limit: int, config_dir: str):
         click.echo(f"{run_id:<4} | {status:<7} | {started:<20} | {duration:<8} | {extracted:<6} | {written:<6} | {error}")
 
 @cli.command()
-@click.option("--config-dir", default="./configs", help="Path to config directory")
-def list_pipelines(config_dir: str):
+def list_pipelines():
     """List all pipelines and their cronjobs."""
     try:
-        resolved = load_configs(config_dir)
+        resolved = load_configs()
         for p_name, p in resolved.pipelines.items():
             source = resolved.sources[p.source]
             sink = resolved.sinks[p.sink]

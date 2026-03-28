@@ -100,8 +100,16 @@ class S3SinkConfig(SinkConfigBase):
 
 class LocalFileSinkConfig(SinkConfigBase):
     type: Literal["local_file"]
-    directory: str  # Directory to write the file
+    directory: Optional[str] = None  # For versioned output
+    file_path: Optional[str] = None  # For fixed output
     file_format: Literal["parquet", "csv", "json"] = "parquet"
+    mode: Literal["replace", "append"] = "replace"
+
+    @model_validator(mode="after")
+    def validate_path_or_dir(self) -> 'LocalFileSinkConfig':
+        if not self.directory and not self.file_path:
+            raise ValueError("Either 'directory' or 'file_path' must be provided for local_file sink")
+        return self
 
 SinkConfig = Annotated[
     Union[PostgresSinkConfig, MySQLSinkConfig, DuckDBSinkConfig, S3SinkConfig, LocalFileSinkConfig, CSVSinkConfig],
