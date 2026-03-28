@@ -17,6 +17,7 @@ dependencies = [
     "pyarrow>=15.0",
     "pytz>=2024.1",
     "fastapi[standard]>=0.135.2",
+    "sqlmodel>=0.0.22",
 ]
 
 [project.scripts]
