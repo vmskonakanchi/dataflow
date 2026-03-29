@@ -3,7 +3,8 @@ import {
   Zap, 
   Clock, 
   ArrowRightLeft,
-  Play
+  Play,
+  AlertCircle
 } from "lucide-react";
 import { 
   Card, 
@@ -21,6 +22,12 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { 
+  Tooltip, 
+  TooltipContent, 
+  TooltipProvider, 
+  TooltipTrigger 
+} from "@/components/ui/tooltip";
 import type { Stats, RunHistory, Pipeline } from '../types';
 
 interface DashboardProps {
@@ -95,29 +102,44 @@ export function Dashboard({
                     <TableHead className="text-[10px] font-black uppercase text-muted-foreground text-right px-6">Finished</TableHead>
                   </TableRow>
                 </TableHeader>
-                <TableBody>
-                  {history.map((run) => (
-                    <TableRow key={run.id} className="border-border/40 hover:bg-muted/20 transition-colors">
-                      <TableCell className="font-mono text-xs px-6 py-4 text-muted-foreground">#{run.id}</TableCell>
-                      <TableCell>
-                        <Badge 
-                          variant={run.status === 'success' ? 'default' : 'destructive'} 
-                          className={`uppercase text-[9px] font-black tracking-tighter ${
-                            run.status === 'success' 
-                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
-                              : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
-                          }`}
-                        >
-                          {run.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">{run.rows_extracted || 0}</TableCell>
-                      <TableCell className="font-mono text-sm">{run.rows_written || 0}</TableCell>
-                      <TableCell className="text-right font-mono text-xs text-muted-foreground px-6 py-4">
-                        {run.finished_at ? new Date(run.finished_at).toLocaleTimeString() : '---'}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                    <TableBody>
+                      {history.map((run) => (
+                        <TableRow key={run.id} className="border-border/40 hover:bg-muted/20 transition-colors">
+                          <TableCell className="font-mono text-xs px-6 py-4 text-muted-foreground">#{run.id}</TableCell>
+                          <TableCell>
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <div className="flex items-center gap-2 cursor-help">
+                                    <Badge 
+                                      variant={run.status === 'success' ? 'default' : 'destructive'} 
+                                      className={`uppercase text-[9px] font-black tracking-tighter ${
+                                        run.status === 'success' 
+                                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
+                                          : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                                      }`}
+                                    >
+                                      {run.status}
+                                    </Badge>
+                                    {run.status === 'failed' && <AlertCircle className="h-3.5 w-3.5 text-rose-400 opacity-70" />}
+                                  </div>
+                                </TooltipTrigger>
+                                {run.status === 'failed' && run.error_message && (
+                                  <TooltipContent side="right" className="max-w-[300px] break-words bg-rose-950 text-rose-100 border-rose-500/50 p-3 shadow-xl">
+                                    <p className="font-bold mb-1 text-[10px] uppercase tracking-widest text-rose-400">Error Details</p>
+                                    <p className="font-mono text-[11px] leading-relaxed">{run.error_message}</p>
+                                  </TooltipContent>
+                                )}
+                              </Tooltip>
+                            </TooltipProvider>
+                          </TableCell>
+                          <TableCell className="font-mono text-sm">{run.rows_extracted || 0}</TableCell>
+                          <TableCell className="font-mono text-sm">{run.rows_written || 0}</TableCell>
+                          <TableCell className="text-right font-mono text-xs text-muted-foreground px-6 py-4">
+                            {run.finished_at ? new Date(run.finished_at).toLocaleTimeString() : '---'}
+                          </TableCell>
+                        </TableRow>
+                      ))}
                   {history.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={5} className="h-[300px] text-center text-muted-foreground italic font-mono text-sm opacity-50">

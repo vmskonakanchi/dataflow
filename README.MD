@@ -51,7 +51,7 @@ Dataflow fixes this.
 
 ### Requirements
 
-- Python 3.9+
+- Python 3.13+
 - [uv](https://github.com/astral-sh/uv) (recommended) or pip
 
 ### Option 1 — Docker (easiest)
@@ -111,14 +111,16 @@ Open `http://localhost:5173` in your browser.
 
 ```
 dataflow/
-├── main.py                  # Entry point
+├── main.py                  # CLI entry point
 ├── dataflow/
-│   ├── api/routes/          # FastAPI route handlers
+│   ├── api/                 # FastAPI application
+│   │   ├── routes/          # FastAPI route handlers
 │   │   ├── pipelines.py
 │   │   ├── sources.py
 │   │   ├── sinks.py
 │   │   ├── cronjobs.py
 │   │   └── system.py
+│   ├── main.py              # FastAPI entry point
 │   ├── connectors/          # Source + sink connectors
 │   │   ├── postgres.py
 │   │   ├── mysql.py
@@ -136,13 +138,13 @@ dataflow/
 ---
 
 ## Roadmap
-
+    
 - [x] PostgreSQL, MySQL, S3, CSV sources
 - [x] DuckDB, Parquet, PostgreSQL sinks
 - [x] Cron-based scheduling
 - [x] Pipeline run history + record count dashboard
 - [x] Append / replace / upsert load strategies
-- [ ] Docker / docker-compose setup *(in progress)*
+- [x] Docker / docker-compose setup
 - [ ] Built-in query editor to inspect pipeline output
 - [ ] Real-time pipeline status updates
 - [ ] Slack alerts on pipeline failure

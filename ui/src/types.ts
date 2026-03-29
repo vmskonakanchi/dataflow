@@ -56,26 +56,41 @@ export interface Source {
   host?: string;
   port?: number;
   database?: string;
+  username?: string;
+  password?: string;
+  schema?: string;
   file_path?: string;
-  url?: string;
-  query?: string;
+  file_format?: 'parquet' | 'csv' | 'json';
+  delimiter?: string;
+  has_header?: boolean;
   bucket?: string;
-  key?: string;
+  key?: string; // used for s3 source
   region?: string;
+  access_key?: string;
+  secret_key?: string;
+  public?: boolean;
   originalName?: string;
 }
 
 export interface Sink {
   name: string;
   type: string;
-  file_path?: string;
-  bucket?: string;
-  key?: string;
-  region?: string;
   host?: string;
   port?: number;
   database?: string;
-  table_name?: string;
+  username?: string;
+  password?: string;
+  schema?: string;
+  file_path?: string;
+  directory?: string; // local_file sink
+  file_format?: 'parquet' | 'csv' | 'json';
+  mode?: 'replace' | 'append';
+  delimiter?: string;
+  bucket?: string;
+  prefix?: string; // used for s3 sink
+  region?: string;
+  access_key?: string;
+  secret_key?: string;
   originalName?: string;
 }
 
