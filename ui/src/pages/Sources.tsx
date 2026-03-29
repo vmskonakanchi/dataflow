@@ -77,7 +77,7 @@ export function Sources({ sources, onSave, onDelete }: SourcesProps) {
               <DialogTitle>{editing?.originalName ? 'Edit' : 'Add'} Data Source</DialogTitle>
               <DialogDescription>Configure connection parameters for this source.</DialogDescription>
             </DialogHeader>
-            <div className="grid gap-6 py-4">
+            <div className="grid gap-4 py-4 max-h-[60vh] overflow-y-auto pr-2">
               <div className="grid gap-2">
                 <Label>Internal Name</Label>
                 <Input 
@@ -95,36 +95,150 @@ export function Sources({ sources, onSave, onDelete }: SourcesProps) {
                     <SelectContent>
                       <SelectItem value="postgres">Postgre SQL</SelectItem>
                       <SelectItem value="mysql">My SQL</SelectItem>
-                      <SelectItem value="local_file">Local CSV/Parquet</SelectItem>
+                      <SelectItem value="s3">AWS S3</SelectItem>
+                      <SelectItem value="local_file">Local File</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-                {editing?.type !== 'local_file' && (
+
+                {(editing?.type === 'postgres' || editing?.type === 'mysql') && (
                   <div className="grid gap-2">
                     <Label>Host / URL</Label>
                     <Input value={editing?.host || ''} onChange={e => setEditing(s => s ? {...s, host: e.target.value} : null)} placeholder="localhost" className="rounded-lg h-10" />
                   </div>
                 )}
+
+                {editing?.type === 's3' && (
+                  <div className="grid gap-2">
+                    <Label>Bucket Name</Label>
+                    <Input value={editing?.bucket || ''} onChange={e => setEditing(s => s ? {...s, bucket: e.target.value} : null)} placeholder="my-bucket" className="rounded-lg h-10" />
+                  </div>
+                )}
               </div>
-              {editing?.type !== 'local_file' ? (
+
+              {(editing?.type === 'postgres' || editing?.type === 'mysql') && (
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label>Port</Label>
-                    <Input type="number" value={editing?.port || ''} onChange={e => setEditing(s => s ? {...s, port: parseInt(e.target.value)} : null)} placeholder="5432" className="rounded-lg h-10" />
+                    <Input type="number" value={editing?.port || ''} onChange={e => setEditing(s => s ? {...s, port: parseInt(e.target.value)} : null)} placeholder={editing?.type === 'postgres' ? "5432" : "3306"} className="rounded-lg h-10" />
                   </div>
                   <div className="grid gap-2">
-                    <Label>Database / Schema</Label>
+                    <Label>Database</Label>
                     <Input value={editing?.database || ''} onChange={e => setEditing(s => s ? {...s, database: e.target.value} : null)} placeholder="postgres" className="rounded-lg h-10" />
                   </div>
                 </div>
-              ) : (
+              )}
+
+              {(editing?.type === 'postgres' || editing?.type === 'mysql') && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label>Username</Label>
+                    <Input value={editing?.username || ''} onChange={e => setEditing(s => s ? {...s, username: e.target.value} : null)} placeholder="admin" className="rounded-lg h-10" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Password</Label>
+                    <Input type="password" value={editing?.password || ''} onChange={e => setEditing(s => s ? {...s, password: e.target.value} : null)} placeholder="••••••••" className="rounded-lg h-10" />
+                  </div>
+                </div>
+              )}
+
+              {editing?.type === 'postgres' && (
                 <div className="grid gap-2">
-                  <Label>Local Path</Label>
-                  <Input value={editing?.file_path || ''} onChange={e => setEditing(s => s ? {...s, file_path: e.target.value} : null)} placeholder="/data/raw/source.csv" className="rounded-lg h-10" />
+                  <Label>Schema</Label>
+                  <Input value={editing?.schema || ''} onChange={e => setEditing(s => s ? {...s, schema: e.target.value} : null)} placeholder="public" className="rounded-lg h-10" />
+                </div>
+              )}
+
+              {editing?.type === 's3' && (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label>Key / Prefix</Label>
+                      <Input value={editing?.key || ''} onChange={e => setEditing(s => s ? {...s, key: e.target.value} : null)} placeholder="data/raw/file.parquet" className="rounded-lg h-10" />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Region</Label>
+                      <Input value={editing?.region || ''} onChange={e => setEditing(s => s ? {...s, region: e.target.value} : null)} placeholder="us-east-1" className="rounded-lg h-10" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label>Access Key</Label>
+                      <Input type="password" value={editing?.access_key || ''} onChange={e => setEditing(s => s ? {...s, access_key: e.target.value} : null)} placeholder="AKIA..." className="rounded-lg h-10" />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Secret Key</Label>
+                      <Input type="password" value={editing?.secret_key || ''} onChange={e => setEditing(s => s ? {...s, secret_key: e.target.value} : null)} placeholder="••••••••" className="rounded-lg h-10" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="grid gap-2">
+                      <Label>File Format</Label>
+                      <Select value={editing?.file_format || 'parquet'} onValueChange={v => setEditing(s => s ? {...s, file_format: v as any} : null)}>
+                        <SelectTrigger className="rounded-lg h-10"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="parquet">Parquet</SelectItem>
+                          <SelectItem value="csv">CSV</SelectItem>
+                          <SelectItem value="json">JSON</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>Public Access</Label>
+                      <Select value={editing?.public ? 'true' : 'false'} onValueChange={v => setEditing(s => s ? {...s, public: v === 'true'} : null)}>
+                        <SelectTrigger className="rounded-lg h-10"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="false">Private</SelectItem>
+                          <SelectItem value="true">Public (Requester Pays)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {(editing?.type === 'local_file') && (
+                <div className="grid gap-2">
+                  <Label>Local File Path</Label>
+                  <Input value={editing?.file_path || ''} onChange={e => setEditing(s => s ? {...s, file_path: e.target.value} : null)} placeholder="/data/source.csv" className="rounded-lg h-10" />
+                </div>
+              )}
+
+              {editing?.type === 'local_file' && (
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="grid gap-2">
+                    <Label>Format</Label>
+                    <Select value={editing?.file_format || 'csv'} onValueChange={v => setEditing(s => s ? {...s, file_format: v as any} : null)}>
+                      <SelectTrigger className="rounded-lg h-10"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="csv">CSV</SelectItem>
+                        <SelectItem value="parquet">Parquet</SelectItem>
+                        <SelectItem value="json">JSON</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {editing?.file_format === 'csv' && (
+                    <>
+                      <div className="grid gap-2">
+                        <Label>Delimiter</Label>
+                        <Input value={editing?.delimiter || ','} onChange={e => setEditing(s => s ? {...s, delimiter: e.target.value} : null)} placeholder="," className="rounded-lg h-10" />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Header</Label>
+                        <Select value={editing?.has_header !== false ? 'true' : 'false'} onValueChange={v => setEditing(s => s ? {...s, has_header: v === 'true'} : null)}>
+                          <SelectTrigger className="rounded-lg h-10"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="true">Yes</SelectItem>
+                            <SelectItem value="false">No</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>
-            <DialogFooter>
+            <DialogFooter className="pt-2 border-t mt-2">
               <Button variant="outline" onClick={() => setIsOpen(false)} className="rounded-xl px-6">Cancel</Button>
               <Button onClick={handleSave} className="bg-teal-500 hover:bg-teal-600 rounded-xl px-10">Save Source</Button>
             </DialogFooter>

@@ -30,9 +30,20 @@ import {
   SelectTrigger, 
   SelectValue 
 } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { 
+  Tabs, 
+  TabsContent, 
+  TabsList, 
+  TabsTrigger 
+} from "@/components/ui/tabs";
+import { 
+  Sheet, 
+  SheetContent
+} from "@/components/ui/sheet";
 import { SqlEditor } from '../components/editors/SqlEditor';
 import { JsonEditor } from '../components/editors/JsonEditor';
+import { TransformGuide } from '../components/editors/TransformGuide';
+import { HelpCircle } from "lucide-react";
 import type { Pipeline, Source, Sink } from '../types';
 
 interface PipelinesProps {
@@ -56,6 +67,7 @@ export function Pipelines({
 }: PipelinesProps) {
   const [editing, setEditing] = useState<Pipeline | null>(null);
   const [isOpen, setIsOpen] = useState(false);
+  const [showGuide, setShowGuide] = useState(false);
 
   const handleCreate = () => {
     setEditing({
@@ -85,6 +97,12 @@ export function Pipelines({
 
   return (
     <div className="grid gap-8 animate-in fade-in duration-500">
+      <Sheet open={showGuide} onOpenChange={setShowGuide}>
+        <SheetContent side="right" className="w-[400px] p-0 border-l border-border/50 shadow-2xl">
+          <TransformGuide />
+        </SheetContent>
+      </Sheet>
+
       <div className="flex items-center justify-between">
         <div className="flex flex-col gap-1">
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Data Pipelines</h1>
@@ -149,16 +167,29 @@ export function Pipelines({
 
               <TabsContent value="query" className="flex flex-col gap-6 mt-0">
                 <div className="grid gap-2">
-                  <Label>Source Query (use {"{{last_run}}"} for incrementals)</Label>
+                  <Label className="flex items-center gap-2 px-2 text-muted-foreground/80">
+                    Source Query (use {"{{last_run}}"} for incrementals)
+                  </Label>
                   <SqlEditor 
                     value={editing?.source_query || ''} 
                     onChange={val => setEditing(p => p ? {...p, source_query: val} : null)} 
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label className="flex justify-between">
-                    <span>Transforms (JSON Array)</span>
-                    <span className="text-xs text-muted-foreground font-normal">Optional</span>
+                  <Label className="flex justify-between items-center bg-muted/30 p-2 rounded-lg border border-border/50">
+                    <div className="flex items-center gap-2 px-1">
+                      <span>Transforms (JSON Array)</span>
+                      <Badge variant="secondary" className="text-[10px] opacity-70">Optional</Badge>
+                    </div>
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => setShowGuide(true)}
+                      className="h-7 gap-1.5 px-2 text-[11px] font-bold uppercase tracking-tight text-muted-foreground hover:text-teal-400 transition-all"
+                    >
+                      <HelpCircle className="h-3 w-3" />
+                      Show Guide
+                    </Button>
                   </Label>
                   <JsonEditor 
                     value={editing?.transforms || []} 
