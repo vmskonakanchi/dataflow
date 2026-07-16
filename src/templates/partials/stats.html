@@ -1,0 +1,22 @@
+<div class="stat-card">
+  <span class="stat-label">Total Pipeline Runs</span>
+  <span class="stat-value">{{ stats.total_runs }}</span>
+</div>
+<div class="stat-card">
+  <span class="stat-label">Success Rate</span>
+  <span class="stat-value success">
+    {% if stats.total_runs > 0 %}
+      {{ ((stats.success / stats.total_runs) * 100) | round(1) }}%
+    {% else %}
+      —
+    {% endif %}
+  </span>
+</div>
+<div class="stat-card">
+  <span class="stat-label">Successful Runs</span>
+  <span class="stat-value success">{{ stats.success }}</span>
+</div>
+<div class="stat-card">
+  <span class="stat-label">Failed Runs</span>
+  <span class="stat-value failed">{{ stats.failed }}</span>
+</div>

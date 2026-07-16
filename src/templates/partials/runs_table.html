@@ -1,0 +1,46 @@
+{% if runs %}
+  {% for run in runs %}
+    <tr>
+      <td style="font-family:var(--font-mono); font-weight:600; color:var(--text-muted);">#{{ run.id }}</td>
+      <td style="font-weight:600;">{{ run.pipeline_name }}</td>
+      <td>
+        <span class="badge {{ run.status }}">
+          {{ run.status }}
+        </span>
+      </td>
+      <td style="color:var(--text-muted); font-size:0.85rem;">{{ run.started_at }}</td>
+      <td style="font-family:var(--font-mono); font-size:0.85rem;">
+        {% if run.duration %}
+          {{ run.duration }}s
+        {% else %}
+          —
+        {% endif %}
+      </td>
+      <td style="font-family:var(--font-mono); font-size:0.85rem;">
+        {{ "{:,}".format(run.rows_extracted) if run.rows_extracted is not none else 0 }}
+      </td>
+      <td style="font-family:var(--font-mono); font-size:0.85rem; font-weight:600; color:var(--teal-accent);">
+        {{ "{:,}".format(run.rows_written) if run.rows_written is not none else 0 }}
+      </td>
+      <td style="font-size:0.85rem; max-width: 250px;">
+        {% if run.error_message %}
+          <span
+            onclick="showRunError(this)"
+            data-error="{{ run.error_message }}"
+            data-run-id="{{ run.id }}"
+            style="color:var(--rose-accent); cursor:pointer; display:inline-block; max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; vertical-align:bottom; text-decoration:underline dotted; text-underline-offset:2px;"
+            title="Click to view full error"
+          >{{ run.error_message }}</span>
+        {% else %}
+          <span style="color:var(--text-muted);">—</span>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+{% else %}
+  <tr>
+    <td colspan="8" style="text-align:center; padding:3rem; color:var(--text-muted);">
+      No pipeline execution history found.
+    </td>
+  </tr>
+{% endif %}

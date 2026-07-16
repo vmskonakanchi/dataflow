@@ -1,0 +1,32 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Secrets
+.env
+
+# Application Specific
+*.db
+*.db-shm
+*.db-wal
+*.db-journal
+*.duckdb
+*.parquet
+configs
+
+# Local developer scratch directory
+scratch/
+
+# Pipeline checkpoints
+.checkpoints/
+
+# AI models (large binary files)
+models/
+*.gguf

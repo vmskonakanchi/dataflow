@@ -1,0 +1,553 @@
+{% extends "base.html" %}
+{% block content %}
+<div x-data="{ 
+  modalOpen: false,
+  wizardStep: 1,
+  editMode: false,
+  originalName: '',
+  name: '',
+  description: '',
+  source_path: '',
+  sink_path: '',
+  sink_format: 'parquet',
+  partition_by: '',
+  checkpointing: false,
+  memory_limit: '4GB',
+  threads: 4,
+  run_as: '',
+  target_file_size: '',
+  row_group_size: '',
+  on_failure: 'none',
+  email: '',
+  on_row_count_below: '',
+  transforms: [],
+  checks: [],
+
+  // Available Python transform plugins (fetched from the API)
+  availablePlugins: [],
+  init() {
+    fetch('/api/transforms/plugins')
+      .then(r => r.json())
+      .then(d => { this.availablePlugins = d.plugins || []; })
+      .catch(() => { this.availablePlugins = []; });
+  },
+
+  // Code expand modal
+  codeModalOpen: false,
+  codeModalTitle: '',
+  codeModalValue: '',
+  _codeModalCallback: null,
+
+  openCodeModal(title, value, callback) {
+    this.codeModalTitle = title;
+    this.codeModalValue = value;
+    this._codeModalCallback = callback;
+    this.codeModalOpen = true;
+    this.$nextTick(() => {
+      const ta = this.$refs.codeModalTextarea;
+      if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+    });
+  },
+  saveCodeModal() {
+    if (this._codeModalCallback) this._codeModalCallback(this.codeModalValue);
+    this.codeModalOpen = false;
+  },
+  
+  addTransform(type) {
+    if (type === 'select') this.transforms.push({ type: 'select', columns: '' });
+    else if (type === 'filter') this.transforms.push({ type: 'filter', condition: '' });
+    else if (type === 'aggregate') this.transforms.push({ type: 'aggregate', group_by: '', aggregates: '' });
+    else if (type === 'join') this.transforms.push({ type: 'join', right_path: '', join_type: 'inner', on: '' });
+    else if (type === 'python') this.transforms.push({ type: 'python', function: (this.availablePlugins[0] || ''), params: '{}', chunk_rows: 0 });
+  },
+  removeTransform(index) { this.transforms.splice(index, 1); },
+  addCheck(type) {
+    if (type === 'not_null') this.checks.push({ type: 'not_null', columns: '' });
+    else if (type === 'unique') this.checks.push({ type: 'unique', columns: '' });
+    else if (type === 'row_count_min') this.checks.push({ type: 'row_count_min', value: 1 });
+    else if (type === 'accepted_values') this.checks.push({ type: 'accepted_values', column: '', values: '' });
+    else if (type === 'custom_sql') this.checks.push({ type: 'custom_sql', query: '', must_be: 0 });
+  },
+  removeCheck(index) { this.checks.splice(index, 1); },
+  openCreate() {
+    this.editMode = false;
+    this.wizardStep = 1;
+    this.originalName = '';
+    this.name = '';
+    this.description = '';
+    this.source_path = '';
+    this.sink_path = '';
+    this.sink_format = 'parquet';
+    this.partition_by = '';
+    this.checkpointing = false;
+    this.memory_limit = '4GB';
+    this.threads = 4;
+    this.run_as = '';
+    this.target_file_size = '';
+    this.row_group_size = '';
+    this.on_failure = 'none';
+    this.email = '';
+    this.on_row_count_below = '';
+    this.transforms = [];
+    this.checks = [];
+    this.modalOpen = true;
+  },
+  openEdit(p) {
+    this.editMode = true;
+    this.wizardStep = 1;
+    this.originalName = p.name;
+    this.name = p.name;
+    this.description = p.description || '';
+    this.source_path = p.source_path;
+    this.sink_path = p.sink_path;
+    this.sink_format = p.sink_format || 'parquet';
+    this.partition_by = p.partition_by || '';
+    this.checkpointing = p.checkpointing || false;
+    this.memory_limit = p.memory_limit || '';
+    this.threads = p.threads || '';
+    this.run_as = p.run_as || '';
+    this.target_file_size = p.target_file_size || '';
+    this.row_group_size = p.row_group_size || '';
+    this.on_failure = p.alerts.on_failure || 'none';
+    this.email = p.alerts.email || '';
+    this.on_row_count_below = p.alerts.on_row_count_below || '';
+    this.transforms = (p.transforms || []).map(t => {
+      let copy = { ...t };
+      if (t.type === 'select') copy.columns = t.columns.join(', ');
+      if (t.type === 'aggregate') { copy.group_by = t.group_by.join(', '); copy.aggregates = t.aggregates.join(', '); }
+      if (t.type === 'python') copy.params = JSON.stringify(t.params || {}, null, 2);
+      return copy;
+    });
+    this.checks = (p.checks || []).map(c => {
+      let copy = { ...c };
+      if (c.type === 'not_null' || c.type === 'unique') copy.columns = c.columns.join(', ');
+      if (c.type === 'accepted_values') copy.values = c.values.join(', ');
+      return copy;
+    });
+    this.modalOpen = true;
+  },
+  serializeTransforms() {
+    return JSON.stringify(this.transforms.map(t => {
+      let copy = { ...t };
+      if (t.type === 'select') copy.columns = t.columns.split(',').map(s => s.trim()).filter(s => s.length > 0);
+      if (t.type === 'aggregate') {
+        copy.group_by = t.group_by.split(',').map(s => s.trim()).filter(s => s.length > 0);
+        copy.aggregates = t.aggregates.split(',').map(s => s.trim()).filter(s => s.length > 0);
+      }
+      if (t.type === 'python') {
+        try { copy.params = JSON.parse(t.params || '{}'); }
+        catch (e) { throw new Error(`Invalid JSON in params for python step ${t.function || '?'}`); }
+        copy.chunk_rows = Math.max(0, parseInt(t.chunk_rows) || 0);
+      }
+      return copy;
+    }));
+  },
+  serializeChecks() {
+    return JSON.stringify(this.checks.map(c => {
+      let copy = { ...c };
+      if (c.type === 'not_null' || c.type === 'unique') copy.columns = c.columns.split(',').map(s => s.trim()).filter(s => s.length > 0);
+      if (c.type === 'accepted_values') copy.values = c.values.split(',').map(s => s.trim()).filter(s => s.length > 0);
+      if (c.type === 'row_count_min') copy.value = parseInt(c.value) || 1;
+      if (c.type === 'custom_sql') copy.must_be = parseInt(c.must_be) || 0;
+      return copy;
+    }));
+  }
+}">
+  <div class="card-header" style="margin-bottom: 2rem;">
+    <div>
+      <h1 class="card-title" style="font-size: 1.75rem;">Pipelines</h1>
+      <p style="color:var(--text-muted); font-size:0.9rem; margin-top:0.25rem;">Create and run SQL-based transformations on Parquet and Delta Lake</p>
+    </div>
+    {% if 'pipelines.create' in perms %}<button class="btn btn-primary" @click="openCreate()">+ Create Pipeline</button>{% endif %}
+  </div>
+
+  <!-- Pipelines Grid -->
+  <div class="pipelines-grid" id="pipelines-list">
+    {% include "partials/pipelines_list.html" %}
+  </div>
+
+  <!-- Wizard Modal -->
+  <div class="modal-overlay" x-show="modalOpen" x-transition style="display:none;">
+    <div class="modal-content" style="max-width: 700px;">
+      <div class="modal-header">
+        <h3 class="card-title" x-text="editMode ? 'Edit Pipeline' : 'Create Pipeline'"></h3>
+        <button class="modal-close" @click="modalOpen = false">&times;</button>
+      </div>
+
+      <!-- Progress Steps -->
+      <div style="display:flex; justify-content:center; gap:0.5rem; margin-bottom:2rem; padding:0 1rem;">
+        <template x-for="(label, i) in ['Basics', 'Source & Sink', 'Transforms', 'Quality Checks', 'Alerts']" :key="i">
+          <div style="display:flex; align-items:center; gap:0.5rem;">
+            <div @click="editMode && (wizardStep = i+1)"
+                 :style="`width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:600; ${editMode ? 'cursor:pointer;' : ''} ${wizardStep > i+1 ? 'background:var(--success); color:var(--field);' : wizardStep === i+1 ? 'background:var(--accent); color:var(--field);' : 'background:var(--elevated); color:var(--text-muted);'}`"
+                 x-text="i+1"></div>
+            <span @click="editMode && (wizardStep = i+1)"
+                  :style="`font-size:0.75rem; ${editMode ? 'cursor:pointer;' : ''} ${wizardStep === i+1 ? 'color:var(--text); font-weight:500;' : 'color:var(--text-muted);'}`"
+                  x-text="label" class="wizard-label"></span>
+            <span x-show="i < 4" style="color:var(--text-muted); margin: 0 0.25rem;">›</span>
+          </div>
+        </template>
+      </div>
+
+      <form id="pipeline-form" 
+            hx-post="/api/pipelines" 
+            hx-target="#pipelines-list" 
+            hx-swap="innerHTML"
+            @submit="modalOpen = false">
+        
+        <input type="hidden" name="original_name" x-model="originalName">
+        <input type="hidden" name="transforms_json" :value="serializeTransforms()">
+        <input type="hidden" name="checks_json" :value="serializeChecks()">
+        <input type="hidden" name="partition_by" x-model="partition_by">
+        <input type="hidden" name="checkpointing" :value="checkpointing ? 'true' : ''">
+
+        <!-- STEP 1: Basics -->
+        <div x-show="wizardStep === 1" x-transition>
+          <div class="form-group">
+            <label>Pipeline Name (lowercase, snake_case)<span class="req">*</span></label>
+            <input type="text" name="name" class="form-control" placeholder="clean_user_events" required x-model="name" :readonly="editMode" :style="editMode ? 'opacity:0.6; cursor:not-allowed;' : ''">
+          </div>
+          <div class="form-group">
+            <label>Description</label>
+            <input type="text" name="description" class="form-control" placeholder="Extracts and cleans raw signups" x-model="description">
+          </div>
+        </div>
+
+        <!-- STEP 2: Source & Sink -->
+        <div x-show="wizardStep === 2" x-transition>
+          <div class="form-group">
+            <label>Source Path (supports *.json, *.csv, *.parquet globs)<span class="req">*</span></label>
+            <input type="text" name="source_path" class="form-control" placeholder="s3://bucket/raw/events/*.json" required x-model="source_path" style="font-family:var(--font-mono); font-size:0.85rem;">
+          </div>
+          <div class="form-group">
+            <label>Sink Path (output destination)<span class="req">*</span></label>
+            <input type="text" name="sink_path" class="form-control" placeholder="s3://bucket/clean/events" required x-model="sink_path" style="font-family:var(--font-mono); font-size:0.85rem;">
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+              <label>Sink Format</label>
+              <select name="sink_format" class="form-control" x-model="sink_format">
+                <option value="parquet">Parquet</option>
+                <option value="delta">Delta Lake (ACID)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Partition By (optional)</label>
+              <input type="text" class="form-control" placeholder="date" x-model="partition_by">
+            </div>
+            <div class="form-group">
+              <label>Checkpointing</label>
+              <select class="form-control" x-model="checkpointing">
+                <option :value="false">Disabled</option>
+                <option :value="true">Enabled (resume on failure)</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+              <label>Memory Limit</label>
+              <input type="text" name="memory_limit" class="form-control" placeholder="4GB" x-model="memory_limit">
+            </div>
+            <div class="form-group">
+              <label>Threads</label>
+              <input type="number" name="threads" class="form-control" placeholder="4" x-model="threads">
+            </div>
+          </div>
+          {% if assignable_roles and assignable_roles|length > 1 %}
+          <div class="form-group">
+            <label>Run as role <span style="color:var(--text-dim); font-weight:400;">(data-access scope this pipeline runs under)</span></label>
+            <select name="run_as" class="form-control" x-model="run_as">
+              <option value="">(creator's role)</option>
+              {% for rn in assignable_roles %}
+              <option value="{{ rn }}">{{ rn }}</option>
+              {% endfor %}
+            </select>
+            <span style="font-size:0.72rem; color:var(--text-dim); margin-top:0.25rem; display:block;">
+              The pipeline's source/sink paths must be within this role's allowed buckets. Only admins can assign a role other than their own.
+            </span>
+          </div>
+          {% endif %}
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+              <label>Target file size <span style="color:var(--text-dim); font-weight:400;">(Parquet sink)</span></label>
+              <input type="text" name="target_file_size" class="form-control" placeholder="e.g. 200MB (blank = single file)" x-model="target_file_size">
+              <span style="font-size:0.72rem; color:var(--text-dim); margin-top:0.25rem; display:block;">
+                Splits the output into multiple ~this-size files (better for S3/parallel reads). Leave blank for one file.
+              </span>
+            </div>
+            <div class="form-group">
+              <label>Row group size <span style="color:var(--text-dim); font-weight:400;">(advanced)</span></label>
+              <input type="number" name="row_group_size" class="form-control" placeholder="122880" x-model="row_group_size">
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 3: Transforms -->
+        <div x-show="wizardStep === 3" x-transition>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <span style="font-weight:500;">Transformations (Sequential)</span>
+            <span style="display:flex; gap:0.5rem;">
+              <button type="button" class="btn btn-secondary btn-sm" @click="addTransform('select')">+ Select</button>
+              <button type="button" class="btn btn-secondary btn-sm" @click="addTransform('filter')">+ Filter</button>
+              <button type="button" class="btn btn-secondary btn-sm" @click="addTransform('aggregate')">+ Aggregate</button>
+              <button type="button" class="btn btn-secondary btn-sm" @click="addTransform('join')">+ Join</button>
+              <button type="button" class="btn btn-secondary btn-sm" @click="addTransform('python')" x-show="availablePlugins.length > 0" title="Run a Python transform plugin (ML, etc.)">+ Python</button>
+            </span>
+          </div>
+          
+          <div class="transforms-builder">
+            <template x-if="transforms.length === 0">
+              <p style="color:var(--text-muted); font-size:0.85rem; text-align:center; padding: 2rem;">
+                No transforms added. Data will pass through directly to the sink.<br>
+                <span style="font-size:0.8rem;">Click the buttons above to add steps.</span>
+              </p>
+            </template>
+            
+            <template x-for="(t, index) in transforms" :key="index">
+              <div class="transform-item-form">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+                  <span class="badge neutral" x-text="'Step ' + (index+1) + ': ' + t.type.toUpperCase()"></span>
+                  <button type="button" class="btn btn-danger btn-sm" style="padding:0.15rem 0.4rem; font-size:0.75rem;" @click="removeTransform(index)">Remove</button>
+                </div>
+                <template x-if="t.type === 'select'">
+                  <div class="form-group" style="margin-bottom:0;">
+                    <label>Columns / SQL Expressions (comma separated)<span class="req">*</span></label>
+                    <div class="code-input-wrapper">
+                      <input type="text" class="form-control code-control" placeholder="event_id, LOWER(email) AS email, price * qty AS total" required x-model="t.columns" style="font-family:var(--font-mono); font-size:0.85rem; padding-right:3rem;">
+                      <button type="button" class="code-expand-btn" @click="openCodeModal('Select Columns', t.columns, (v) => t.columns = v)" title="Expand editor">&#x26F6;</button>
+                    </div>
+                  </div>
+                </template>
+                <template x-if="t.type === 'filter'">
+                  <div class="form-group" style="margin-bottom:0;">
+                    <label>SQL WHERE Condition<span class="req">*</span></label>
+                    <div class="code-input-wrapper">
+                      <input type="text" class="form-control code-control" placeholder="email IS NOT NULL AND status = 'active'" required x-model="t.condition" style="font-family:var(--font-mono); font-size:0.85rem; padding-right:3rem;">
+                      <button type="button" class="code-expand-btn" @click="openCodeModal('Filter Condition', t.condition, (v) => t.condition = v)" title="Expand editor">&#x26F6;</button>
+                    </div>
+                  </div>
+                </template>
+                <template x-if="t.type === 'aggregate'">
+                  <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.75rem;">
+                    <div class="form-group" style="margin-bottom:0;">
+                      <label>Group By Columns<span class="req">*</span></label>
+                      <div class="code-input-wrapper">
+                        <input type="text" class="form-control" placeholder="user_id, status" required x-model="t.group_by" style="padding-right:3rem;">
+                        <button type="button" class="code-expand-btn" @click="openCodeModal('Group By', t.group_by, (v) => t.group_by = v)" title="Expand editor">&#x26F6;</button>
+                      </div>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                      <label>Aggregates<span class="req">*</span></label>
+                      <div class="code-input-wrapper">
+                        <input type="text" class="form-control code-control" placeholder="COUNT(*) AS count, SUM(revenue) AS total" required x-model="t.aggregates" style="font-family:var(--font-mono); font-size:0.85rem; padding-right:3rem;">
+                        <button type="button" class="code-expand-btn" @click="openCodeModal('Aggregates', t.aggregates, (v) => t.aggregates = v)" title="Expand editor">&#x26F6;</button>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+                <template x-if="t.type === 'join'">
+                  <div style="display:flex; flex-direction:column; gap:0.5rem;">
+                    <div style="display:grid; grid-template-columns: 2fr 1fr; gap:0.5rem;">
+                      <div class="form-group" style="margin-bottom:0;">
+                        <label>Right Source Path<span class="req">*</span></label>
+                        <input type="text" class="form-control" placeholder="data/raw/users.parquet" required x-model="t.right_path">
+                      </div>
+                      <div class="form-group" style="margin-bottom:0;">
+                        <label>Join Type</label>
+                        <select class="form-control" x-model="t.join_type">
+                          <option value="inner">INNER</option>
+                          <option value="left">LEFT</option>
+                          <option value="right">RIGHT</option>
+                          <option value="full">FULL</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                      <label>ON Condition<span class="req">*</span></label>
+                      <div class="code-input-wrapper">
+                        <input type="text" class="form-control code-control" placeholder="left.user_id = right.user_id" required x-model="t.on" style="font-family:var(--font-mono); font-size:0.85rem; padding-right:3rem;">
+                        <button type="button" class="code-expand-btn" @click="openCodeModal('JOIN ON Condition', t.on, (v) => t.on = v)" title="Expand editor">&#x26F6;</button>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+                <template x-if="t.type === 'python'">
+                  <div style="display:flex; flex-direction:column; gap:0.75rem;">
+                    <div class="form-group" style="margin-bottom:0;">
+                      <label>Plugin<span class="req">*</span></label>
+                      <select class="form-control" x-model="t.function" required style="font-family:var(--font-mono); font-size:0.85rem;">
+                        <template x-for="plugin in availablePlugins" :key="plugin">
+                          <option :value="plugin" x-text="plugin"></option>
+                        </template>
+                      </select>
+                      <span style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem; display:block;">
+                        Python plugin from <code>src/transforms/</code>. Runs in the isolated worker; loads data into memory (partition to bound it).
+                      </span>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                      <label>Params (JSON)</label>
+                      <div class="code-input-wrapper">
+                        <textarea class="form-control code-control" rows="3" x-model="t.params" placeholder='{ "column": "embedding", "n_dims": 20 }' style="font-family:var(--font-mono); font-size:0.85rem; padding-right:3rem;"></textarea>
+                        <button type="button" class="code-expand-btn" @click="openCodeModal('Plugin Params (JSON)', t.params, (v) => t.params = v)" title="Expand editor">&#x26F6;</button>
+                      </div>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                      <label>Chunk rows</label>
+                      <input type="number" min="0" step="1000" class="form-control" x-model.number="t.chunk_rows" placeholder="0" style="font-family:var(--font-mono); font-size:0.85rem;">
+                      <span style="font-size:0.75rem; color:var(--text-muted); margin-top:0.25rem; display:block;">
+                        <strong>0</strong> = run in-process (whole dataset in RAM). Set <strong>&gt; 0</strong> to process that many rows per chunk, each in a fresh subprocess — bounds peak memory for large partitions (e.g. <code>12000</code>).
+                      </span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- STEP 4: Quality Checks -->
+        <div x-show="wizardStep === 4" x-transition>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+            <span style="font-weight:500;">Data Quality Checks</span>
+            <span style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+              <button type="button" class="btn btn-secondary btn-sm" @click="addCheck('not_null')">+ Not Null</button>
+              <button type="button" class="btn btn-secondary btn-sm" @click="addCheck('unique')">+ Unique</button>
+              <button type="button" class="btn btn-secondary btn-sm" @click="addCheck('row_count_min')">+ Row Count</button>
+              <button type="button" class="btn btn-secondary btn-sm" @click="addCheck('accepted_values')">+ Accepted Values</button>
+              <button type="button" class="btn btn-secondary btn-sm" @click="addCheck('custom_sql')">+ Custom SQL</button>
+            </span>
+          </div>
+
+          <div class="transforms-builder">
+            <template x-if="checks.length === 0">
+              <p style="color:var(--text-muted); font-size:0.85rem; text-align:center; padding: 2rem;">
+                No checks added. Output will be written without validation.<br>
+                <span style="font-size:0.8rem;">Checks run after transforms, before writing. Bad data is blocked.</span>
+              </p>
+            </template>
+
+            <template x-for="(c, index) in checks" :key="index">
+              <div class="transform-item-form">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+                  <span class="badge neutral" x-text="c.type.replace('_', ' ').toUpperCase()"></span>
+                  <button type="button" class="btn btn-danger btn-sm" style="padding:0.15rem 0.4rem; font-size:0.75rem;" @click="removeCheck(index)">Remove</button>
+                </div>
+                <template x-if="c.type === 'not_null'">
+                  <div class="form-group" style="margin-bottom:0;">
+                    <label>Columns that must not be null (comma separated)<span class="req">*</span></label>
+                    <input type="text" class="form-control" placeholder="user_id, email, created_at" required x-model="c.columns">
+                  </div>
+                </template>
+                <template x-if="c.type === 'unique'">
+                  <div class="form-group" style="margin-bottom:0;">
+                    <label>Columns that must be unique (comma separated)<span class="req">*</span></label>
+                    <input type="text" class="form-control" placeholder="event_id, transaction_id" required x-model="c.columns">
+                  </div>
+                </template>
+                <template x-if="c.type === 'row_count_min'">
+                  <div class="form-group" style="margin-bottom:0;">
+                    <label>Minimum expected row count<span class="req">*</span></label>
+                    <input type="number" class="form-control" placeholder="1000" required x-model="c.value" min="1">
+                  </div>
+                </template>
+                <template x-if="c.type === 'accepted_values'">
+                  <div style="display:grid; grid-template-columns: 1fr 2fr; gap:0.75rem;">
+                    <div class="form-group" style="margin-bottom:0;">
+                      <label>Column<span class="req">*</span></label>
+                      <input type="text" class="form-control" placeholder="status" required x-model="c.column">
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                      <label>Allowed values (comma separated)<span class="req">*</span></label>
+                      <input type="text" class="form-control" placeholder="active, inactive, pending" required x-model="c.values">
+                    </div>
+                  </div>
+                </template>
+                <template x-if="c.type === 'custom_sql'">
+                  <div style="display:grid; grid-template-columns: 3fr 1fr; gap:0.75rem;">
+                    <div class="form-group" style="margin-bottom:0;">
+                      <label>SQL Query (use "output" as table name)<span class="req">*</span></label>
+                      <div class="code-input-wrapper">
+                        <input type="text" class="form-control code-control" placeholder="SELECT COUNT(*) FROM output WHERE amount < 0" required x-model="c.query" style="font-family:var(--font-mono); font-size:0.85rem; padding-right:3rem;">
+                        <button type="button" class="code-expand-btn" @click="openCodeModal('Custom SQL Check', c.query, (v) => c.query = v)" title="Expand editor">&#x26F6;</button>
+                      </div>
+                    </div>
+                    <div class="form-group" style="margin-bottom:0;">
+                      <label>Must equal<span class="req">*</span></label>
+                      <input type="number" class="form-control" placeholder="0" required x-model="c.must_be">
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </template>
+          </div>
+        </div>
+
+        <!-- STEP 5: Alerts -->
+        <div x-show="wizardStep === 5" x-transition>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+              <label>On Failure</label>
+              <select name="on_failure" class="form-control" x-model="on_failure">
+                <option value="none">No alert</option>
+                <option value="email">Email Notification</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Alert if Row Count Below</label>
+              <input type="number" name="on_row_count_below" class="form-control" placeholder="100" x-model="on_row_count_below">
+            </div>
+          </div>
+          <div class="form-group" x-show="on_failure === 'email'" x-transition>
+            <label>Alert Email Address<span class="req">*</span></label>
+            <input type="email" name="email" class="form-control" placeholder="alerts@mycompany.com" :required="on_failure === 'email'" x-model="email">
+          </div>
+
+          <!-- Summary -->
+          <div style="margin-top:2rem; padding:1rem; background:var(--bg-tertiary); border-radius:8px; font-size:0.85rem;">
+            <strong>Pipeline Summary</strong>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.5rem; margin-top:0.75rem; color:var(--text-muted);">
+              <span>Name: <span x-text="name" style="color:var(--text-primary)"></span></span>
+              <span>Source: <span x-text="source_path || '—'" style="color:var(--text-primary); word-break:break-all;"></span></span>
+              <span>Format: <span x-text="sink_format" style="color:var(--text-primary)"></span></span>
+              <span>Transforms: <span x-text="transforms.length + ' steps'" style="color:var(--text-primary)"></span></span>
+              <span>Checks: <span x-text="checks.length + ' rules'" style="color:var(--text-primary)"></span></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Navigation -->
+        <div style="display:flex; justify-content:space-between; margin-top:2rem;">
+          <button type="button" class="btn btn-secondary" x-show="wizardStep > 1" @click="wizardStep--">← Back</button>
+          <span x-show="wizardStep === 1"></span>
+          <div style="display:flex; gap:0.75rem;">
+            <button type="button" class="btn btn-secondary" @click="modalOpen = false">Cancel</button>
+            <button type="button" class="btn btn-primary" x-show="wizardStep < 5" @click="wizardStep++">Next →</button>
+            <button type="submit" class="btn btn-primary" x-show="wizardStep === 5">Save Pipeline</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+  <!-- Code Expand Modal -->
+  <div class="modal-overlay" x-show="codeModalOpen" x-transition style="display:none;" @keydown.escape.window="codeModalOpen && saveCodeModal()" @click.stop>
+    <div class="modal-content" style="max-width:650px; display:flex; flex-direction:column; max-height:80vh;">
+      <div class="modal-header">
+        <h3 class="card-title" x-text="codeModalTitle"></h3>
+        <button class="modal-close" @click="saveCodeModal()">&times;</button>
+      </div>
+      <div style="flex:1; overflow:auto;">
+        <textarea x-ref="codeModalTextarea" x-model="codeModalValue" class="form-control" style="font-family:var(--font-mono); font-size:0.85rem; min-height:250px; resize:vertical; line-height:1.7; background:var(--field);" @keydown.ctrl.enter="saveCodeModal()" @keydown.meta.enter="saveCodeModal()"></textarea>
+      </div>
+      <div style="display:flex; justify-content:flex-end; gap:0.5rem; padding-top:var(--space-md);">
+        <span style="font-size:0.72rem; color:var(--text-muted); margin-right:auto;">Ctrl+Enter to save</span>
+        <button type="button" class="btn btn-primary btn-sm" @click="saveCodeModal()">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .wizard-label { display: inline; }
+  @media (max-width: 768px) { .wizard-label { display: none; } }
+</style>
+{% endblock %}

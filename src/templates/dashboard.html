@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+<div id="dashboard-container">
+
+  <div style="margin-bottom:var(--space-xl);">
+    <h1 style="font-family:var(--font-display); font-size:1.6rem; font-weight:700; letter-spacing:-0.02em; color:var(--text);">Pipeline Overview</h1>
+    <p style="color:var(--text-muted); font-size:0.85rem; margin-top:0.25rem;">Execution metrics and recent activity</p>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats-grid" id="stats-area" hx-get="/api/stats" hx-trigger="load, every 10s" hx-swap="innerHTML">
+    {% include "partials/stats.html" %}
+  </div>
+
+  <!-- Recent Runs -->
+  <div class="card">
+    <div class="card-header">
+      <h2 class="card-title">Recent Executions</h2>
+      <button class="btn btn-secondary btn-sm" 
+              hx-get="/api/runs-table" 
+              hx-target="#runs-table-body" 
+              hx-swap="innerHTML">
+        Refresh
+      </button>
+    </div>
+    
+    <div class="table-wrapper" style="max-height:500px; overflow-y:auto;">
+      <table class="runs-table">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Pipeline</th>
+            <th>Status</th>
+            <th>Started</th>
+            <th>Duration</th>
+            <th>Rows In</th>
+            <th>Rows Out</th>
+            <th>Error</th>
+          </tr>
+        </thead>
+        <tbody id="runs-table-body" hx-get="/api/runs-table" hx-trigger="load, every 10s" hx-swap="innerHTML">
+          {% include "partials/runs_table.html" %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Error Detail Modal -->
+  <div id="run-error-modal" class="modal-overlay" style="display:none;" onclick="if(event.target===this)hideRunError()">
+    <div class="modal-content" style="max-width:800px; max-height:80vh; display:flex; flex-direction:column;">
+      <div class="modal-header">
+        <h3 class="card-title">Run Error <span id="run-error-id" style="color:var(--text-muted); font-family:var(--font-mono); font-weight:400;"></span></h3>
+        <button class="modal-close" onclick="hideRunError()">&times;</button>
+      </div>
+      <div style="overflow:auto; flex:1; padding:1rem;">
+        <pre id="run-error-body" style="margin:0; font-family:var(--font-mono); font-size:0.8rem; white-space:pre-wrap; word-break:break-word; color:var(--text); line-height:1.6;"></pre>
+      </div>
+      <div style="padding:0.75rem 1rem; border-top:1px solid var(--border); display:flex; justify-content:flex-end; gap:0.5rem;">
+        <button class="btn btn-secondary btn-sm" onclick="copyRunError()">Copy</button>
+        <button class="btn btn-secondary btn-sm" onclick="hideRunError()">Close</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function showRunError(el) {
+    var msg = el.getAttribute('data-error') || '';
+    var runId = el.getAttribute('data-run-id') || '';
+    document.getElementById('run-error-body').textContent = msg;
+    document.getElementById('run-error-id').textContent = runId ? '#' + runId : '';
+    document.getElementById('run-error-modal').style.display = 'flex';
+  }
+  function hideRunError() {
+    document.getElementById('run-error-modal').style.display = 'none';
+  }
+  function copyRunError() {
+    var msg = document.getElementById('run-error-body').textContent;
+    navigator.clipboard.writeText(msg).then(function () {
+      if (typeof showCopiedToast === 'function') showCopiedToast();
+    });
+  }
+  // Close on Escape
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') hideRunError();
+  });
+</script>
+{% endblock %}

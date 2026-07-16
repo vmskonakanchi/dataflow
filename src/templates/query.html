@@ -1,0 +1,932 @@
+{% extends "base.html" %} {% block content %}
+<!-- CodeMirror Syntax Highlighter assets -->
+<link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css"
+/>
+<link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css"
+/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/sql/sql.min.js"></script>
+
+<style>
+    /* Custom scrollbars inside CodeMirror */
+    .CodeMirror-vscrollbar::-webkit-scrollbar,
+    .CodeMirror-hscrollbar::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+    }
+    .CodeMirror-vscrollbar::-webkit-scrollbar-track,
+    .CodeMirror-hscrollbar::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    .CodeMirror-vscrollbar::-webkit-scrollbar-thumb,
+    .CodeMirror-hscrollbar::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 3px;
+    }
+
+    .CodeMirror {
+        height: 180px;
+        font-family: var(--font-mono), monospace;
+        font-size: 0.9rem;
+        border-radius: 6px;
+        border: 1px solid var(--border) !important;
+        background-color: var(--field) !important;
+        color: var(--text) !important;
+    }
+    .CodeMirror-gutters {
+        background-color: var(--surface) !important;
+        border-right: 1px solid var(--border) !important;
+    }
+    .CodeMirror-linenumber {
+        color: var(--text-muted) !important;
+    }
+    .CodeMirror-cursor {
+        border-left: 2px solid var(--accent) !important;
+    }
+    .CodeMirror-selected {
+        background: var(--accent-dim) !important;
+    }
+
+    /* Light-theme syntax token colors — the material-darker theme's token
+       colors are tuned for dark backgrounds, so override them for contrast. */
+    html[data-theme="light"] .cm-keyword { color: #7C3AED !important; font-weight: 600; }
+    html[data-theme="light"] .cm-string { color: #059669 !important; }
+    html[data-theme="light"] .cm-number { color: #DC2626 !important; }
+    html[data-theme="light"] .cm-comment { color: #94A3B8 !important; font-style: italic; }
+    html[data-theme="light"] .cm-operator { color: #0F172A !important; }
+    html[data-theme="light"] .cm-variable,
+    html[data-theme="light"] .cm-variable-2 { color: #0F172A !important; }
+    html[data-theme="light"] .cm-builtin,
+    html[data-theme="light"] .cm-def { color: #0284C7 !important; }
+    html[data-theme="light"] .cm-punctuation,
+    html[data-theme="light"] .cm-bracket { color: #475569 !important; }
+</style>
+
+<div x-data="queryTool">
+    <div class="card-header" style="margin-bottom: 2rem">
+        <div>
+            <h1 class="card-title" style="font-size: 1.75rem">
+                SQL Query Tool
+            </h1>
+            <p
+                style="
+                    color: var(--text-muted);
+                    font-size: 0.9rem;
+                    margin-top: 0.25rem;
+                "
+            >
+                Query your Parquet datasets using DuckDB SQL. Data is fetched
+                via Apache Arrow IPC stream for high-performance retrieval.
+            </p>
+        </div>
+        <button class="btn btn-secondary" @click="aiChatOpen = !aiChatOpen" x-show="aiChatFeatureEnabled" style="display:flex; align-items:center; gap:0.5rem;">
+            <svg style="width:18px;height:18px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+            <span x-text="aiChatOpen ? 'Close Flux' : 'Flux AI'"></span>
+        </button>
+    </div>
+
+    <!-- AI Chat Sidebar -->
+    <div class="ai-chat-sidebar" x-show="aiChatOpen && aiChatFeatureEnabled" x-transition.opacity>
+        <div class="ai-chat-header">
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+                <svg style="width:20px;height:20px; color:var(--primary);" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714a2.25 2.25 0 00.659 1.591L19 14.5M14.25 3.104c.251.023.501.05.75.082M19 14.5l-2.47 2.47a2.25 2.25 0 01-1.59.659H9.06a2.25 2.25 0 01-1.591-.659L5 14.5m14 0V5a2 2 0 00-2-2H7a2 2 0 00-2 2v9.5"/></svg>
+                <span style="font-weight:600; font-size:0.95rem;">Flux</span>
+                <span class="badge neutral" style="font-size:0.6rem; margin-left:0.25rem;">AI</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+                <!-- Model settings toggle -->
+                <button @click="aiSettingsOpen = !aiSettingsOpen" style="background:none; border:none; cursor:pointer; color:var(--text-muted); display:flex; align-items:center; padding:0.25rem;" :style="aiSettingsOpen ? 'color:var(--primary)' : ''" title="Model Settings">
+                    <svg style="width:18px;height:18px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                </button>
+                <button @click="aiChatOpen = false" style="background:none; border:none; cursor:pointer; color:var(--text-muted); font-size:1.25rem; line-height:1;">&times;</button>
+            </div>
+        </div>
+
+        <!-- Model Settings Panel -->
+        <div x-show="aiSettingsOpen" class="ai-model-settings" x-transition>
+            <div class="ai-model-settings-inner">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;">
+                    <span style="font-weight:600; font-size:0.85rem; color:var(--text-main);">Model Settings</span>
+                    <span x-show="activeModel" class="badge success" style="font-size:0.7rem;" x-text="activeModel ? 'Active: ' + activeModel : ''"></span>
+                </div>
+
+                <!-- Model list -->
+                <template x-for="model in aiModels" :key="model.id">
+                    <div class="ai-model-card">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                            <div>
+                                <div style="font-weight:600; font-size:0.8rem; color:var(--text-main);" x-text="model.name"></div>
+                                <div style="font-size:0.7rem; color:var(--text-muted); margin-top:2px;" x-text="model.parameters + ' params | ~' + model.size_mb + 'MB'"></div>
+                            </div>
+                            <div style="display:flex; gap:0.35rem;">
+                                <!-- Download button -->
+                                <template x-if="!model.downloaded && model.status !== 'downloading'">
+                                    <button class="btn btn-secondary btn-sm" @click="downloadModel(model.id)" style="padding:0.2rem 0.5rem; font-size:0.7rem;">
+                                        Download
+                                    </button>
+                                </template>
+                                <!-- Downloading indicator -->
+                                <template x-if="model.status === 'downloading'">
+                                    <span class="badge neutral" style="font-size:0.65rem;">Downloading...</span>
+                                </template>
+                                <!-- Load/Active button -->
+                                <template x-if="model.downloaded && activeModel !== model.id">
+                                    <button class="btn btn-primary btn-sm" @click="loadModel(model.id)" style="padding:0.2rem 0.5rem; font-size:0.7rem;">
+                                        Load
+                                    </button>
+                                </template>
+                                <!-- Active badge -->
+                                <template x-if="activeModel === model.id">
+                                    <span class="badge success" style="font-size:0.65rem;">Active</span>
+                                </template>
+                            </div>
+                        </div>
+                        <div style="font-size:0.7rem; color:var(--text-muted); margin-top:4px;" x-text="model.description"></div>
+                        <!-- Error message -->
+                        <div x-show="model.error" style="font-size:0.7rem; color:#f87171; margin-top:4px;" x-text="model.error"></div>
+                    </div>
+                </template>
+
+                <!-- Unload button -->
+                <button x-show="activeModel" class="btn btn-danger btn-sm" @click="unloadModel()" style="width:100%; margin-top:0.5rem; font-size:0.75rem;">
+                    Unload Model (Free Memory)
+                </button>
+
+                <p style="font-size:0.7rem; color:var(--text-muted); margin-top:0.75rem; margin-bottom:0;">
+                    Models run locally on your CPU. No data leaves your machine.
+                </p>
+            </div>
+        </div>
+
+        <div class="ai-chat-messages" x-ref="chatMessages">
+            <!-- Welcome message -->
+            <template x-if="chatMessages.length === 0">
+                <div class="ai-chat-message ai-message">
+                    <div class="ai-chat-bubble ai-bubble">
+                        <p style="margin:0;">I'm Flux, your data assistant. Ask me to write SQL queries, explore your data, or explain results.</p>
+                        <p style="margin:0.5rem 0 0; font-size:0.8rem; color:var(--text-muted);">Describe what you need in plain English.</p>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Chat history -->
+            <template x-for="(msg, idx) in chatMessages" :key="idx">
+                <div :class="'ai-chat-message ' + (msg.role === 'user' ? 'user-message' : 'ai-message')">
+                    <div :class="'ai-chat-bubble ' + (msg.role === 'user' ? 'user-bubble' : 'ai-bubble')">
+                        <p style="margin:0; white-space:pre-wrap;" x-text="msg.content"></p>
+                        <!-- Use Query button for AI messages with SQL -->
+                        <template x-if="msg.role === 'ai' && msg.sql">
+                            <button class="btn btn-primary btn-sm ai-use-query-btn" @click="useAiQuery(msg.sql)">
+                                <svg style="width:14px;height:14px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+                                Use Query
+                            </button>
+                        </template>
+                    </div>
+                </div>
+            </template>
+
+            <!-- Loading indicator -->
+            <div x-show="aiLoading" class="ai-chat-message ai-message">
+                <div class="ai-chat-bubble ai-bubble">
+                    <span class="ai-typing-indicator">
+                        <span></span><span></span><span></span>
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <div class="ai-chat-input-area">
+            <form @submit.prevent="sendAiMessage()" style="display:flex; gap:0.5rem; width:100%;">
+                <input
+                    type="text"
+                    class="form-control"
+                    x-model="aiInput"
+                    placeholder="Ask Flux anything..."
+                    :disabled="aiLoading"
+                    style="flex:1; font-size:0.85rem;"
+                />
+                <button type="submit" class="btn btn-primary" :disabled="aiLoading || !aiInput.trim()" style="padding:0.5rem 0.75rem;">
+                    <svg style="width:18px;height:18px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Query Input Card -->
+    <div class="card" style="margin-bottom: 2rem">
+        <div class="form-group">
+            <label for="queryInput">DuckDB SQL Query</label>
+            <textarea
+                id="queryInput"
+                x-model="query"
+                @keydown.ctrl.enter.prevent="runQuery"
+                @keydown.meta.enter.prevent="runQuery"
+                class="form-control code-editor"
+                placeholder="SELECT * FROM 'data/raw/user_events.parquet' LIMIT 500"
+                style="height: 150px"
+            ></textarea>
+        </div>
+
+        <div
+            style="
+                display: flex;
+                gap: 1rem;
+                align-items: center;
+                justify-content: space-between;
+            "
+        >
+            <div style="font-size: 0.85rem; color: var(--text-muted)">
+                Tip: Query any parquet file under <code>data/</code> using
+                <code>'path/to/*.parquet'</code>. Press
+                <code>Ctrl + Enter</code> to run.
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                <button
+                    class="btn btn-primary"
+                    @click="runQuery"
+                    :disabled="loading"
+                    style="min-width: 120px"
+                >
+                    <span x-show="!loading">Run Query</span>
+                    <span x-show="loading">Executing...</span>
+                </button>
+                <button
+                    class="btn btn-secondary"
+                    @click="downloadParquet"
+                    :disabled="loading || !query.trim()"
+                    style="min-width: 140px; display: flex; align-items: center; gap: 0.4rem; justify-content: center;"
+                    title="Download full query results as a Parquet file"
+                >
+                    <svg style="width:16px;height:16px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    <span x-show="!exporting">Download Parquet</span>
+                    <span x-show="exporting">Exporting...</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error Alert -->
+    <div
+        x-show="errorMessage"
+        class="error-box"
+        style="
+            display: none;
+            margin-bottom: 2rem;
+            padding: 1.25rem;
+            background-color: rgba(220, 38, 38, 0.05);
+            border: 1px solid #ef4444;
+            border-radius: 8px;
+            color: #f87171;
+            font-family: var(--font-mono);
+            font-size: 0.9rem;
+            white-space: pre-wrap;
+            word-break: break-word;
+        "
+    >
+        <div
+            style="
+                font-weight: 700;
+                margin-bottom: 0.5rem;
+                font-family: var(--font-sans);
+                color: #fca5a5;
+            "
+        >
+            Query Error
+        </div>
+        <span x-text="errorMessage"></span>
+    </div>
+
+    <!-- Query Results Card -->
+    <div class="card" x-show="pageRows.length > 0" style="display: none">
+        <div class="card-header" style="margin-bottom: 1rem; padding: 0">
+            <h2 class="card-title" style="font-size: 1.25rem">Query Results</h2>
+            <div style="display:flex; align-items:center; gap:0.75rem;">
+                <button class="btn btn-secondary btn-sm" @click="copyResults()" title="Copy results as TSV">
+                    <svg style="width:14px;height:14px;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                    Copy
+                </button>
+                <div class="badge success" x-show="elapsedTime">
+                    Ran in &nbsp;<span x-text="elapsedTime"></span>s
+                </div>
+            </div>
+        </div>
+
+        <!-- Table Container -->
+        <div class="table-wrapper" style="max-height: 500px; overflow-y: auto">
+            <table class="runs-table">
+                <thead>
+                    <tr>
+                        <template x-for="col in columns" :key="col">
+                            <th
+                                x-text="col"
+                                style="
+                                    position: sticky;
+                                    top: 0;
+                                    z-index: 10;
+                                    background-color: #111111;
+                                "
+                            ></th>
+                        </template>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template
+                        x-for="(row, rowIndex) in pageRows"
+                        :key="rowIndex"
+                    >
+                        <tr>
+                            <template
+                                x-for="(cell, cellIndex) in row"
+                                :key="cellIndex"
+                            >
+                                <td
+                                    :class="{'json-cell': isJson(cell)}"
+                                    @click="isJson(cell) && showJsonModal(cell)"
+                                    :title="isJson(cell) ? 'Click to expand JSON' : ''"
+                                    x-text="cell === null || cell === undefined ? 'NULL' : isJson(cell) ? truncateJson(cell) : cell"
+                                    :style="isJson(cell) ? 'cursor:pointer; max-width:300px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--primary);' : ''"
+                                ></td>
+                            </template>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination Controls -->
+        <div
+            class="pagination-controls"
+            style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-top: 1.5rem;
+                flex-wrap: wrap;
+                gap: 1rem;
+            "
+        >
+            <div
+                class="pagination-info"
+                style="font-size: 0.9rem; color: var(--text-muted)"
+            >
+                Showing page <span x-text="currentPage + 1"></span>
+                (<span x-text="pageRows.length"></span> rows)
+                <span x-show="totalRows > 0"> of <span x-text="totalRows"></span> total</span>
+            </div>
+            <div
+                class="pagination-buttons"
+                style="display: flex; align-items: center; gap: 0.5rem"
+            >
+                <button
+                    class="btn btn-secondary btn-sm"
+                    @click="firstPage()"
+                    :disabled="currentPage === 0"
+                    style="padding: 0.25rem 0.5rem; border-radius: 4px"
+                >
+                    &lt;&lt;
+                </button>
+                <button
+                    class="btn btn-secondary btn-sm"
+                    @click="prevPage()"
+                    :disabled="currentPage === 0"
+                    style="padding: 0.25rem 0.75rem; border-radius: 4px"
+                >
+                    Previous
+                </button>
+                <span
+                    style="
+                        font-size: 0.9rem;
+                        margin: 0 0.5rem;
+                        color: var(--text-main);
+                    "
+                    >Page <span x-text="currentPage + 1"></span>
+                    <span x-show="totalPages > 0"> of <span x-text="totalPages"></span></span>
+                </span>
+                <button
+                    class="btn btn-secondary btn-sm"
+                    @click="nextPage()"
+                    :disabled="!hasMore"
+                    style="padding: 0.25rem 0.75rem; border-radius: 4px"
+                >
+                    Next
+                </button>
+                <button
+                    class="btn btn-secondary btn-sm"
+                    @click="lastPage()"
+                    :disabled="!hasMore"
+                    style="padding: 0.25rem 0.5rem; border-radius: 4px"
+                >
+                    &gt;&gt;
+                </button>
+                <select
+                    class="form-control"
+                    @change="changePageSize($event.target.value)"
+                    style="
+                        width: auto;
+                        padding: 0.25rem 0.5rem;
+                        height: 32px;
+                        font-size: 0.85rem;
+                        margin-left: 1rem;
+                        display: inline-block;
+                    "
+                >
+                    <option value="25">25 / page</option>
+                    <option value="50" selected>50 / page</option>
+                    <option value="100">100 / page</option>
+                    <option value="250">250 / page</option>
+                    <option value="500">500 / page</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- JSON Viewer Modal -->
+    <div class="modal-overlay" x-show="jsonModalOpen" x-transition style="display:none;" @click.self="jsonModalOpen = false">
+      <div class="modal-content" style="max-width:700px; max-height:80vh; display:flex; flex-direction:column;">
+        <div class="modal-header">
+          <h3 class="card-title">JSON Viewer</h3>
+          <button class="modal-close" @click="jsonModalOpen = false">&times;</button>
+        </div>
+        <div style="overflow:auto; flex:1; padding:1rem;">
+          <pre style="margin:0; font-family:var(--font-mono); font-size:0.8rem; white-space:pre-wrap; word-break:break-word; color:var(--text-main); line-height:1.6;" x-html="jsonModalContent"></pre>
+        </div>
+        <div style="padding:0.75rem 1rem; border-top:1px solid var(--border-glass); display:flex; justify-content:flex-end; gap:0.5rem;">
+          <button class="btn btn-secondary btn-sm" @click="copyJson()">Copy</button>
+          <button class="btn btn-secondary btn-sm" @click="jsonModalOpen = false">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Empty State when query executed but no results (or before first run) -->
+    <div
+        class="card"
+        x-show="!loading && !errorMessage && pageRows.length === 0"
+        style="text-align: center; padding: 3rem; color: var(--text-muted)"
+    >
+        <svg
+            style="
+                width: 48px;
+                height: 48px;
+                margin: 0 auto 1rem;
+                display: block;
+            "
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+        >
+            <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+            />
+        </svg>
+        <p>
+            Enter a query above and click "Run Query" to fetch and display data
+            via Apache Arrow.
+        </p>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("alpine:init", () => {
+        Alpine.data("queryTool", () => ({
+            query: "SELECT * FROM 'data/raw/user_events.parquet'",
+            loading: false,
+            exporting: false,
+            errorMessage: "",
+            columns: [],
+            totalRows: -1,
+            pageSize: 50,
+            currentPage: 0,
+            totalPages: 0,
+            hasMore: false,
+            elapsedTime: null,
+            pageRows: [],
+            jsonModalOpen: false,
+            jsonModalContent: "",
+            _jsonRaw: "",
+
+            // AI Chat state
+            aiChatOpen: false,
+            aiChatFeatureEnabled: {{ 'true' if ai_chat_enabled else 'false' }},
+            aiInput: "",
+            aiLoading: false,
+            chatMessages: [],
+
+            // Model settings state
+            aiSettingsOpen: false,
+            aiModels: [],
+            activeModel: null,
+            _modelPollInterval: null,
+
+            async fetchModels() {
+                try {
+                    const resp = await fetch("/api/ai-models");
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        this.aiModels = data.models;
+                        this.activeModel = data.active_model;
+                    }
+                } catch (e) {
+                    // AI extra not installed — silently ignore
+                }
+            },
+
+            async downloadModel(modelId) {
+                try {
+                    await fetch(`/api/ai-models/${modelId}/download`, { method: "POST" });
+                    // Start polling for download status
+                    this.startModelPolling();
+                } catch (e) {
+                    console.error("Download failed:", e);
+                }
+            },
+
+            async loadModel(modelId) {
+                try {
+                    const resp = await fetch(`/api/ai-models/${modelId}/load`, { method: "POST" });
+                    if (resp.ok) {
+                        this.activeModel = modelId;
+                        await this.fetchModels();
+                    } else {
+                        const err = await resp.json();
+                        alert("Failed to load model: " + (err.detail || "Unknown error"));
+                    }
+                } catch (e) {
+                    console.error("Load failed:", e);
+                }
+            },
+
+            async unloadModel() {
+                try {
+                    await fetch("/api/ai-models/unload", { method: "POST" });
+                    this.activeModel = null;
+                    await this.fetchModels();
+                } catch (e) {
+                    console.error("Unload failed:", e);
+                }
+            },
+
+            startModelPolling() {
+                if (this._modelPollInterval) return;
+                this._modelPollInterval = setInterval(async () => {
+                    await this.fetchModels();
+                    // Stop polling if no downloads in progress
+                    const downloading = this.aiModels.some(m => m.status === "downloading");
+                    if (!downloading) {
+                        clearInterval(this._modelPollInterval);
+                        this._modelPollInterval = null;
+                    }
+                }, 3000);
+            },
+
+            async sendAiMessage() {
+                const message = this.aiInput.trim();
+                if (!message) return;
+
+                // Add user message to chat
+                this.chatMessages.push({ role: "user", content: message });
+                this.aiInput = "";
+                this.aiLoading = true;
+
+                // Scroll to bottom
+                this.$nextTick(() => {
+                    const el = this.$refs.chatMessages;
+                    if (el) el.scrollTop = el.scrollHeight;
+                });
+
+                try {
+                    const formData = new FormData();
+                    formData.append("message", message);
+
+                    const response = await fetch("/api/ai-chat", {
+                        method: "POST",
+                        body: formData,
+                    });
+
+                    if (!response.ok) {
+                        throw new Error("Failed to get AI response");
+                    }
+
+                    const data = await response.json();
+                    this.chatMessages.push({
+                        role: "ai",
+                        content: data.reply,
+                        sql: data.sql || null,
+                    });
+                } catch (err) {
+                    this.chatMessages.push({
+                        role: "ai",
+                        content: "❌ Error: " + (err.message || "Could not reach AI service."),
+                        sql: null,
+                    });
+                } finally {
+                    this.aiLoading = false;
+                    this.$nextTick(() => {
+                        const el = this.$refs.chatMessages;
+                        if (el) el.scrollTop = el.scrollHeight;
+                    });
+                }
+            },
+
+            useAiQuery(sql) {
+                this.query = sql;
+                if (this._editor) {
+                    this._editor.setValue(sql);
+                }
+            },
+
+            copyResults() {
+                if (!this.columns.length || !this.pageRows.length) return;
+                const header = this.columns.join('\t');
+                const rows = this.pageRows.map(row => row.map(cell => cell === null ? '' : String(cell)).join('\t'));
+                const text = [header, ...rows].join('\n');
+                copyToClipboard(text);
+            },
+
+            isJson(val) {
+                if (typeof val !== 'string') return false;
+                const trimmed = val.trim();
+                return (trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'));
+            },
+
+            truncateJson(val) {
+                if (!val) return '';
+                const str = typeof val === 'string' ? val : JSON.stringify(val);
+                return str.length > 80 ? str.substring(0, 80) + '…' : str;
+            },
+
+            showJsonModal(val) {
+                try {
+                    let parsed = typeof val === 'string' ? JSON.parse(val) : val;
+                    // Recursively parse double-encoded JSON strings
+                    parsed = this._deepParse(parsed);
+                    // Collapse long arrays (e.g. embeddings)
+                    parsed = this._collapseLongArrays(parsed);
+                    const formatted = JSON.stringify(parsed, null, 2);
+                    this._jsonRaw = JSON.stringify(typeof val === 'string' ? JSON.parse(val) : val, null, 2);
+                    // Syntax highlight with proper escaping
+                    const escaped = formatted
+                        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    this.jsonModalContent = escaped.replace(
+                        /("(?:[^"\\]|\\.)*")\s*:/g,
+                        '<span style="color:#7dd3fc;">$1</span>:'
+                    ).replace(
+                        /:\s*("(?:[^"\\]|\\.)*")/g,
+                        ': <span style="color:#86efac;">$1</span>'
+                    ).replace(
+                        /:\s*(-?\d+\.?\d*(?:E-?\d+)?)/gi,
+                        ': <span style="color:#fcd34d;">$1</span>'
+                    ).replace(
+                        /:\s*(true|false|null)\b/g,
+                        ': <span style="color:#f472b6;">$1</span>'
+                    );
+                    this.jsonModalOpen = true;
+                } catch (e) {
+                    this._jsonRaw = val;
+                    this.jsonModalContent = val;
+                    this.jsonModalOpen = true;
+                }
+            },
+
+            _deepParse(obj) {
+                if (typeof obj === 'string') {
+                    const trimmed = obj.trim();
+                    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                        try { return this._deepParse(JSON.parse(obj)); } catch(e) { return obj; }
+                    }
+                    return obj;
+                }
+                if (Array.isArray(obj)) return obj.map(item => this._deepParse(item));
+                if (obj && typeof obj === 'object') {
+                    const result = {};
+                    for (const [key, value] of Object.entries(obj)) {
+                        result[key] = this._deepParse(value);
+                    }
+                    return result;
+                }
+                return obj;
+            },
+
+            _collapseLongArrays(obj, threshold = 20) {
+                if (Array.isArray(obj)) {
+                    if (obj.length > threshold && obj.every(item => typeof item === 'number')) {
+                        return `[${obj.length} numbers — first: ${obj[0]}, last: ${obj[obj.length-1]}]`;
+                    }
+                    return obj.map(item => this._collapseLongArrays(item, threshold));
+                }
+                if (obj && typeof obj === 'object') {
+                    const result = {};
+                    for (const [key, value] of Object.entries(obj)) {
+                        result[key] = this._collapseLongArrays(value, threshold);
+                    }
+                    return result;
+                }
+                return obj;
+            },
+
+            copyJson() {
+                copyToClipboard(this._jsonRaw);
+            },
+
+            init() {
+                this.$nextTick(() => {
+                    const editor = CodeMirror.fromTextArea(
+                        document.getElementById("queryInput"),
+                        {
+                            mode: "text/x-sql",
+                            theme: "material-darker",
+                            lineNumbers: true,
+                            indentWithTabs: true,
+                            smartIndent: true,
+                            matchBrackets: true,
+                            autofocus: true,
+                            extraKeys: {
+                                "Ctrl-Enter": () => { this.runQuery(); },
+                                "Cmd-Enter": () => { this.runQuery(); },
+                            },
+                        },
+                    );
+                    editor.setValue(this.query);
+                    editor.on("change", (cm) => { this.query = cm.getValue(); });
+                    this.$watch("query", (value) => {
+                        if (value !== editor.getValue()) editor.setValue(value);
+                    });
+                    this._editor = editor;
+                });
+                // Load available AI models
+                this.fetchModels();
+            },
+
+            async fetchPage(page) {
+                this.loading = true;
+                this.errorMessage = "";
+                const startTime = performance.now();
+
+                try {
+                    const formData = new FormData();
+                    formData.append("query", this.query);
+                    formData.append("page", page);
+                    formData.append("page_size", this.pageSize);
+
+                    const response = await fetch("/api/query", {
+                        method: "POST",
+                        body: formData,
+                    });
+
+                    if (!response.ok) {
+                        let errorText = "Unknown error";
+                        try {
+                            const errJson = await response.json();
+                            errorText = errJson.detail || errorText;
+                        } catch (e) {
+                            errorText = await response.text();
+                        }
+                        throw new Error(errorText);
+                    }
+
+                    // Read pagination metadata from headers
+                    this.totalRows = parseInt(response.headers.get("X-Total-Rows") || "-1");
+                    this.currentPage = parseInt(response.headers.get("X-Page") || "0");
+                    this.hasMore = response.headers.get("X-Has-More") === "true";
+
+                    if (this.totalRows > 0) {
+                        this.totalPages = Math.ceil(this.totalRows / this.pageSize);
+                    }
+
+                    const buffer = await response.arrayBuffer();
+                    if (buffer.byteLength === 0) {
+                        this.columns = [];
+                        this.pageRows = [];
+                        this.totalRows = 0;
+                        this.totalPages = 0;
+                        return;
+                    }
+
+                    const { tableFromIPC } = await import("https://cdn.jsdelivr.net/npm/apache-arrow@17.0.0/+esm");
+                    const table = tableFromIPC(new Uint8Array(buffer));
+
+                    this.columns = table.schema.fields.map((f) => f.name);
+                    this.elapsedTime = ((performance.now() - startTime) / 1000).toFixed(3);
+
+                    const rows = [];
+                    for (let i = 0; i < table.numRows; i++) {
+                        const row = table.get(i);
+                        const rowData = [];
+                        for (const colName of this.columns) {
+                            let val = row[colName];
+                            if (val === null || val === undefined) {
+                                rowData.push(null);
+                            } else if (val instanceof Date) {
+                                rowData.push(val.toISOString().replace("T", " ").substring(0, 19));
+                            } else if (typeof val === "bigint") {
+                                rowData.push(val.toString());
+                            } else if (typeof val === "object" && val.constructor && val.constructor.name === "Int64") {
+                                rowData.push(val.toString());
+                            } else if (typeof val === "object") {
+                                // Arrow struct / list / map values are proxy objects.
+                                // Convert to a plain JSON string so they render (and stay
+                                // expandable via the JSON viewer) instead of breaking Alpine.
+                                try {
+                                    let plain = typeof val.toJSON === "function"
+                                        ? val.toJSON()
+                                        : (typeof val.toArray === "function" ? Array.from(val.toArray()) : val);
+                                    rowData.push(JSON.stringify(plain, (k, v) =>
+                                        typeof v === "bigint" ? v.toString() : v));
+                                } catch (e) {
+                                    rowData.push(String(val));
+                                }
+                            } else {
+                                rowData.push(val);
+                            }
+                        }
+                        rows.push(rowData);
+                    }
+                    this.pageRows = rows;
+                } catch (err) {
+                    console.error(err);
+                    this.errorMessage = err.message || "An error occurred while executing the query.";
+                    this.totalRows = 0;
+                    this.columns = [];
+                    this.pageRows = [];
+                    this.totalPages = 0;
+                    this.elapsedTime = null;
+                } finally {
+                    this.loading = false;
+                }
+            },
+
+            async runQuery() {
+                this.currentPage = 0;
+                this.totalRows = -1;
+                this.hasMore = false;
+                await this.fetchPage(0);
+            },
+
+            async nextPage() {
+                if (this.hasMore) {
+                    await this.fetchPage(this.currentPage + 1);
+                }
+            },
+
+            async prevPage() {
+                if (this.currentPage > 0) {
+                    await this.fetchPage(this.currentPage - 1);
+                }
+            },
+
+            async firstPage() {
+                await this.fetchPage(0);
+            },
+
+            async lastPage() {
+                if (this.totalPages > 0) {
+                    await this.fetchPage(this.totalPages - 1);
+                }
+            },
+
+            async changePageSize(size) {
+                this.pageSize = parseInt(size);
+                this.currentPage = 0;
+                await this.fetchPage(0);
+            },
+
+            async downloadParquet() {
+                if (!this.query.trim()) return;
+                this.exporting = true;
+                this.errorMessage = "";
+                try {
+                    const formData = new FormData();
+                    formData.append("query", this.query);
+                    const resp = await fetch("/api/query/export", {
+                        method: "POST",
+                        body: formData,
+                    });
+                    if (!resp.ok) {
+                        const err = await resp.json();
+                        throw new Error(err.detail || "Export failed");
+                    }
+                    const blob = await resp.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = "query_results.parquet";
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                } catch (err) {
+                    this.errorMessage = err.message || "Export failed";
+                } finally {
+                    this.exporting = false;
+                }
+            },
+        }));
+    });
+</script>
+{% endblock %}

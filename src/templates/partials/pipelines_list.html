@@ -1,0 +1,71 @@
+{% if pipelines %}
+  {% for p in pipelines %}
+    <div class="pipeline-card">
+      <div>
+        <div class="pipeline-header">
+          <div class="pipeline-name">{{ p.name }}</div>
+          <div style="display:flex; gap:0.25rem;">
+            <span class="badge neutral" title="Transforms Count">{{ p.transforms | length }} Step(s)</span>
+          </div>
+        </div>
+        <div class="pipeline-desc">{{ p.description or 'No description provided.' }}</div>
+      </div>
+
+      <div class="pipeline-meta">
+        <div class="pipeline-meta-row">
+          <span>Source:</span>
+          <span class="pipeline-meta-val" title="{{ p.source_path }}">{{ p.source_path | truncate(35) }}</span>
+        </div>
+        <div class="pipeline-meta-row">
+          <span>Sink:</span>
+          <span class="pipeline-meta-val" title="{{ p.sink_path }}">{{ p.sink_path | truncate(35) }}</span>
+        </div>
+        <div class="pipeline-meta-row">
+          <span>Memory Footprint:</span>
+          <span class="pipeline-meta-val">{{ p.memory_limit or 'Auto' }}</span>
+        </div>
+        <div class="pipeline-meta-row">
+          <span>Compute Threads:</span>
+          <span class="pipeline-meta-val">{{ p.threads or 'Auto' }}</span>
+        </div>
+      </div>
+
+      <div class="pipeline-actions">
+        {% if 'pipelines.run' in perms %}
+        <!-- Run Pipeline -->
+        <button class="btn btn-secondary btn-sm"
+                hx-post="/api/pipelines/{{ p.name }}/run"
+                hx-swap="none"
+                hx-on::after-request="if(event.detail.successful) showSuccessToast('Pipeline \'{{ p.name }}\' queued — running in background. Check the Dashboard for progress.')"
+                style="border-color:var(--teal-accent); color:var(--teal-accent);">
+          Run Now
+        </button>
+        {% endif %}
+        {% if 'pipelines.edit' in perms %}
+        <!-- Edit Pipeline -->
+        <button class="btn btn-secondary btn-sm"
+                @click="openEdit({{ p_json[p.name] }})">
+          Edit
+        </button>
+        {% endif %}
+        {% if 'pipelines.delete' in perms %}
+        <!-- Delete Pipeline -->
+        <button class="btn btn-danger btn-sm"
+                hx-delete="/api/pipelines/{{ p.name }}"
+                hx-target="#pipelines-list"
+                hx-swap="innerHTML"
+                hx-confirm="Are you sure you want to delete pipeline '{{ p.name }}'?">
+          Delete
+        </button>
+        {% endif %}
+        {% if not ('pipelines.run' in perms or 'pipelines.edit' in perms or 'pipelines.delete' in perms) %}
+        <span style="font-size:0.8rem; color:var(--text-muted);">Read-only</span>
+        {% endif %}
+      </div>
+    </div>
+  {% endfor %}
+{% else %}
+  <div style="grid-column: 1 / -1; text-align:center; padding:5rem; color:var(--text-muted);">
+    No configured pipelines found. Click the button above to create one.
+  </div>
+{% endif %}

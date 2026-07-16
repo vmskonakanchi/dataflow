@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Setup — Dataflow</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body style="display:flex; align-items:center; justify-content:center; min-height:100vh; background:var(--field);">
+  <div style="width:100%; max-width:400px; padding:1.5rem;">
+
+    <div style="text-align:center; margin-bottom:2rem;">
+      <div class="logo-icon" style="margin:0 auto 1rem; width:44px; height:44px; font-size:1.2rem;">D</div>
+      <h1 style="font-family:var(--font-display); font-size:1.4rem; font-weight:700; color:var(--text); margin:0; letter-spacing:-0.02em;">Dataflow</h1>
+      <p style="color:var(--text-muted); font-size:0.82rem; margin-top:0.4rem;">Create your admin account to get started</p>
+    </div>
+
+    <div class="card" style="border-left-color:var(--border);">
+      <div style="display:flex; align-items:flex-start; gap:0.5rem; padding:0.6rem 0.8rem; background:var(--accent-dim); border:1px solid rgba(56,189,248,0.2); border-radius:var(--radius); margin-bottom:1.25rem;">
+        <svg style="width:16px;height:16px;flex-shrink:0;color:var(--accent);margin-top:1px;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <span style="font-size:0.78rem; color:var(--text-muted); line-height:1.5;">One-time setup. This page won't be accessible after your account is created.</span>
+      </div>
+
+      {% if error %}
+      <div style="background:var(--error-dim); border:1px solid rgba(248,113,113,0.3); border-radius:var(--radius); padding:0.65rem 0.85rem; margin-bottom:1.25rem; color:var(--error); font-size:0.82rem;">
+        {{ error }}
+      </div>
+      {% endif %}
+
+      <form method="POST" action="/setup">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input id="username" type="text" name="username" class="form-control" placeholder="admin" required autofocus autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label for="password">Password <span style="color:var(--text-dim); font-weight:400;">(min. 6 characters)</span></label>
+          <input id="password" type="password" name="password" class="form-control" required minlength="6" autocomplete="new-password">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%; margin-top:var(--space-lg);">
+          Create admin account
+        </button>
+      </form>
+    </div>
+
+  </div>
+</body>
+</html>

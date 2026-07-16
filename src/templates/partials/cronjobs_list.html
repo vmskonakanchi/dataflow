@@ -1,0 +1,75 @@
+{% if cronjobs %}
+  {% for c in cronjobs %}
+    <div class="pipeline-card">
+      <div>
+        <div class="pipeline-header">
+          <div class="pipeline-name">{{ c.name }}</div>
+          <div>
+            <!-- Toggle Switch -->
+            {% if 'cronjobs.run' in perms %}
+            <button class="badge {% if c.enabled %}success{% else %}neutral{% endif %}"
+                    hx-post="/api/cronjobs/{{ c.name }}/toggle"
+                    hx-target="#cronjobs-list"
+                    hx-swap="innerHTML"
+                    style="cursor:pointer; border:1px solid transparent;"
+                    title="Click to toggle enabled/disabled">
+              {% if c.enabled %}ENABLED{% else %}DISABLED{% endif %}
+            </button>
+            {% else %}
+            <span class="badge {% if c.enabled %}success{% else %}neutral{% endif %}">{% if c.enabled %}ENABLED{% else %}DISABLED{% endif %}</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="pipeline-desc" style="margin-top:0.25rem;">
+          Runs pipeline: <code style="font-family:var(--font-mono); font-weight:600; color:var(--teal-accent);">{{ c.pipeline }}</code>
+        </div>
+      </div>
+
+      <div class="pipeline-meta" style="margin-top: 1rem;">
+        <div class="pipeline-meta-row">
+          <span>Schedule:</span>
+          <span class="pipeline-meta-val">{{ c.schedule }}</span>
+        </div>
+        <div class="pipeline-meta-row">
+          <span>Timezone:</span>
+          <span class="pipeline-meta-val">{{ c.timezone }}</span>
+        </div>
+        <div class="pipeline-meta-row">
+          <span>Retries:</span>
+          <span class="pipeline-meta-val">{{ c.retry.max_attempts }} attempt(s)</span>
+        </div>
+        <div class="pipeline-meta-row">
+          <span>Delay:</span>
+          <span class="pipeline-meta-val">{{ c.retry.delay_seconds }}s</span>
+        </div>
+      </div>
+
+      <div class="pipeline-actions">
+        {% if 'cronjobs.edit' in perms %}
+        <!-- Edit Schedule -->
+        <button class="btn btn-secondary btn-sm"
+                @click="openEdit({{ cronjobs_json[c.name] }})">
+          Edit
+        </button>
+        {% endif %}
+        {% if 'cronjobs.delete' in perms %}
+        <!-- Delete Schedule -->
+        <button class="btn btn-danger btn-sm"
+                hx-delete="/api/cronjobs/{{ c.name }}"
+                hx-target="#cronjobs-list"
+                hx-swap="innerHTML"
+                hx-confirm="Are you sure you want to delete schedule '{{ c.name }}'?">
+          Delete
+        </button>
+        {% endif %}
+        {% if not ('cronjobs.edit' in perms or 'cronjobs.delete' in perms) %}
+        <span style="font-size:0.8rem; color:var(--text-muted);">Read-only</span>
+        {% endif %}
+      </div>
+    </div>
+  {% endfor %}
+{% else %}
+  <div style="grid-column: 1 / -1; text-align:center; padding:5rem; color:var(--text-muted);">
+    No pipeline schedules configured. Click the button above to create one.
+  </div>
+{% endif %}

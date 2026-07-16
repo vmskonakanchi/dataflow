@@ -1,0 +1,484 @@
+{% extends "base.html" %}
+{% block content %}
+{% set default_tab = 'email' if 'settings.manage' in perms else ('users' if 'users.manage' in perms else 'roles') %}
+<div x-data="settingsPage('{{ default_tab }}')" x-init="init()">
+
+  <div style="margin-bottom:var(--space-xl);">
+    <h1 style="font-family:var(--font-display); font-size:1.6rem; font-weight:700; letter-spacing:-0.02em; color:var(--text);">Settings</h1>
+    <p style="color:var(--text-muted); font-size:0.85rem; margin-top:0.25rem;">Manage your workspace configuration</p>
+  </div>
+
+  <!-- Tabs -->
+  <div class="settings-tabs">
+    {% if 'settings.manage' in perms %}
+    <button class="settings-tab" :class="{ active: activeTab === 'email' }" @click="setTab('email')">Email &amp; Alerts</button>
+    <button class="settings-tab" :class="{ active: activeTab === 'ai' }" @click="setTab('ai')">Flux AI</button>
+    <button class="settings-tab" :class="{ active: activeTab === 'sso' }" @click="setTab('sso')">Single Sign-On</button>
+    {% endif %}
+    {% if 'users.manage' in perms %}
+    <button class="settings-tab" :class="{ active: activeTab === 'users' }" @click="setTab('users')">Users</button>
+    {% endif %}
+    {% if 'roles.manage' in perms %}
+    <button class="settings-tab" :class="{ active: activeTab === 'roles' }" @click="setTab('roles'); loadRoles()">Roles &amp; Permissions</button>
+    {% endif %}
+  </div>
+
+  <!-- Save confirmation -->
+  <div x-show="settingsMsg" x-transition style="margin-bottom:var(--space-md); font-size:0.8rem; color:var(--accent);" x-text="settingsMsg"></div>
+
+  {% if 'settings.manage' in perms %}
+  <!-- Email & Alerts Tab -->
+  <div x-show="activeTab === 'email'" style="display:none;">
+    <div class="card">
+      <h2 class="card-title" style="margin-bottom:var(--space-lg);">Email &amp; Alert Configuration</h2>
+      {% for setting in app_settings %}
+      {% if setting.key.startswith('smtp') %}
+      <div class="form-group">
+        <label style="display:flex; justify-content:space-between;">
+          <span>{{ setting.key }}</span>
+          <span style="font-weight:400; font-size:0.72rem; color:var(--text-dim);">{{ setting.description }}</span>
+        </label>
+        <div style="display:flex; gap:0.5rem;">
+          {% if setting.key == 'smtp_password' %}
+          <input type="password" class="form-control" value="{{ setting.value }}" placeholder="Not set" id="setting-{{ setting.key }}">
+          {% elif setting.key == 'smtp_port' %}
+          <input type="number" class="form-control" value="{{ setting.value }}" style="max-width:120px;" id="setting-{{ setting.key }}">
+          {% else %}
+          <input type="text" class="form-control" value="{{ setting.value }}" placeholder="Not set" id="setting-{{ setting.key }}">
+          {% endif %}
+          <button class="btn btn-secondary btn-sm"
+                  onclick="Alpine.$data(this.closest('[x-data]')).saveSetting('{{ setting.key }}', document.getElementById('setting-{{ setting.key }}').value)">
+            Save
+          </button>
+        </div>
+      </div>
+      {% endif %}
+      {% endfor %}
+      {% for setting in app_settings %}
+      {% if setting.key == 'webhook_url' %}
+      <div class="form-group" style="margin-top:var(--space-lg); border-top:1px solid var(--border); padding-top:var(--space-lg);">
+        <label style="display:flex; justify-content:space-between;">
+          <span>Webhook URL</span>
+          <span style="font-weight:400; font-size:0.72rem; color:var(--text-dim);">{{ setting.description }}</span>
+        </label>
+        <div style="display:flex; gap:0.5rem;">
+          <input type="text" class="form-control" value="{{ setting.value }}" placeholder="https://hooks.slack.com/services/..." id="setting-{{ setting.key }}">
+          <button class="btn btn-secondary btn-sm"
+                  onclick="Alpine.$data(this.closest('[x-data]')).saveSetting('{{ setting.key }}', document.getElementById('setting-{{ setting.key }}').value)">
+            Save
+          </button>
+        </div>
+        <p style="font-size:0.72rem; color:var(--text-dim); margin-top:0.4rem;">Fires on pipeline failure and low row count. Works with Slack and Discord incoming webhooks, or any endpoint that accepts a JSON POST.</p>
+      </div>
+      {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  <div x-show="activeTab === 'ai'" style="display:none;">
+    <div class="card">
+      <h2 class="card-title" style="margin-bottom:var(--space-lg);">Flux AI</h2>
+      {% for setting in app_settings %}
+      {% if setting.key == 'ai_chat_enabled' %}
+      <div class="form-group">
+        <label style="display:flex; justify-content:space-between;">
+          <span>Flux Assistant</span>
+          <span style="font-weight:400; font-size:0.72rem; color:var(--text-dim);">{{ setting.description }}</span>
+        </label>
+        <div style="display:flex; align-items:center; gap:0.75rem;">
+          <select class="form-control" style="width:auto; padding:0.5rem 1rem;"
+                  onchange="Alpine.$data(this.closest('[x-data]')).saveSetting('{{ setting.key }}', this.value)">
+            <option value="true" {{ 'selected' if setting.value == 'true' else '' }}>Enabled</option>
+            <option value="false" {{ 'selected' if setting.value == 'false' else '' }}>Disabled</option>
+          </select>
+          <span style="font-size:0.78rem; color:var(--text-muted);">Shows Flux in the Query page</span>
+        </div>
+      </div>
+      {% endif %}
+      {% endfor %}
+      {% for setting in app_settings %}
+      {% if setting.key == 'models_dir' %}
+      <div class="form-group">
+        <label style="display:flex; justify-content:space-between;">
+          <span>Models Directory</span>
+          <span style="font-weight:400; font-size:0.72rem; color:var(--text-dim);">{{ setting.description }}</span>
+        </label>
+        <div style="display:flex; gap:0.5rem;">
+          <input type="text" class="form-control" value="{{ setting.value }}" id="setting-{{ setting.key }}">
+          <button class="btn btn-secondary btn-sm"
+                  onclick="Alpine.$data(this.closest('[x-data]')).saveSetting('{{ setting.key }}', document.getElementById('setting-{{ setting.key }}').value)">
+            Save
+          </button>
+        </div>
+      </div>
+      {% endif %}
+      {% endfor %}
+      <p style="font-size:0.78rem; color:var(--text-dim); margin-top:var(--space-md);">Model management is available within Flux on the Query page.</p>
+    </div>
+  </div>
+
+  <!-- Single Sign-On Tab -->
+  <div x-show="activeTab === 'sso'" style="display:none;">
+    <div class="card">
+      <h2 class="card-title" style="margin-bottom:var(--space-sm);">Single Sign-On (OIDC / Microsoft Entra)</h2>
+      <p style="font-size:0.78rem; color:var(--text-dim); margin-bottom:var(--space-lg);">
+        Additive to username/password — local accounts keep working. Register a redirect URI of
+        <code>&lt;your-url&gt;/auth/sso/callback</code> in your identity provider. Entra discovery URL:
+        <code>https://login.microsoftonline.com/&lt;tenant-id&gt;/v2.0/.well-known/openid-configuration</code>.
+      </p>
+      {% for setting in app_settings %}
+      {% if setting.key.startswith('sso_') %}
+      <div class="form-group">
+        <label style="display:flex; justify-content:space-between;">
+          <span>{{ setting.key }}</span>
+          <span style="font-weight:400; font-size:0.72rem; color:var(--text-dim);">{{ setting.description }}</span>
+        </label>
+        <div style="display:flex; gap:0.5rem; align-items:flex-start;">
+          {% if setting.key in ('sso_enabled', 'sso_auto_create_users') %}
+          <select class="form-control" style="width:auto; padding:0.5rem 1rem;"
+                  onchange="Alpine.$data(this.closest('[x-data]')).saveSetting('{{ setting.key }}', this.value)">
+            <option value="true" {{ 'selected' if setting.value == 'true' else '' }}>Enabled</option>
+            <option value="false" {{ 'selected' if setting.value == 'false' else '' }}>Disabled</option>
+          </select>
+          {% elif setting.key == 'sso_group_role_map' %}
+          <textarea class="form-control" rows="4" id="setting-{{ setting.key }}"
+                    style="font-family:var(--font-mono); font-size:0.78rem;"
+                    placeholder='{"&lt;entra-group-id&gt;": "editor", "&lt;another-group-id&gt;": "admin"}'>{{ setting.value }}</textarea>
+          <button class="btn btn-secondary btn-sm"
+                  onclick="Alpine.$data(this.closest('[x-data]')).saveSetting('{{ setting.key }}', document.getElementById('setting-{{ setting.key }}').value)">
+            Save
+          </button>
+          {% elif setting.key == 'sso_client_secret' %}
+          <input type="password" class="form-control" value="{{ setting.value }}" placeholder="Not set" id="setting-{{ setting.key }}" autocomplete="off">
+          <button class="btn btn-secondary btn-sm"
+                  onclick="Alpine.$data(this.closest('[x-data]')).saveSetting('{{ setting.key }}', document.getElementById('setting-{{ setting.key }}').value)">
+            Save
+          </button>
+          {% else %}
+          <input type="text" class="form-control" value="{{ setting.value }}" placeholder="Not set" id="setting-{{ setting.key }}">
+          <button class="btn btn-secondary btn-sm"
+                  onclick="Alpine.$data(this.closest('[x-data]')).saveSetting('{{ setting.key }}', document.getElementById('setting-{{ setting.key }}').value)">
+            Save
+          </button>
+          {% endif %}
+        </div>
+      </div>
+      {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if 'users.manage' in perms %}
+  <!-- Users Tab -->
+  <div x-show="activeTab === 'users'" style="display:none;">
+    <div class="card">
+      <div class="card-header" style="margin-bottom:var(--space-lg);">
+        <h2 class="card-title">Users</h2>
+        <button class="btn btn-primary btn-sm" @click="openCreate()">Add user</button>
+      </div>
+
+      <div id="users-list" style="display:flex; flex-direction:column; gap:0.75rem;">
+        {% include "partials/users_list.html" %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if 'roles.manage' in perms %}
+  <!-- Roles & Permissions Tab -->
+  <div x-show="activeTab === 'roles'" style="display:none;">
+    <div class="card">
+      <div class="card-header" style="margin-bottom:var(--space-md);">
+        <h2 class="card-title">Roles &amp; Permissions</h2>
+      </div>
+      <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:var(--space-lg);">
+        Each role is a set of permissions. System roles are locked; create custom roles and tick the
+        permissions they grant. Viewing (dashboards, lists) is available to every role.
+      </p>
+      <div x-show="roleMsg" x-transition style="margin-bottom:var(--space-md); font-size:0.8rem; color:var(--accent);" x-text="roleMsg"></div>
+
+      <div style="overflow-x:auto;">
+        <table style="width:100%; border-collapse:collapse; font-size:0.8rem;">
+          <thead>
+            <tr style="border-bottom:1px solid var(--border);">
+              <th style="text-align:left; padding:0.5rem; position:sticky; left:0; background:var(--bg);">Role</th>
+              <template x-for="(plist, group) in permissionGroups" :key="group">
+                <th :colspan="plist.length" style="text-align:center; padding:0.5rem; border-left:1px solid var(--border);" x-text="group"></th>
+              </template>
+              <th style="padding:0.5rem;"></th>
+            </tr>
+            <tr style="border-bottom:1px solid var(--border); color:var(--text-muted);">
+              <th style="padding:0.4rem; position:sticky; left:0; background:var(--bg);"></th>
+              <template x-for="(plist, group) in permissionGroups" :key="group">
+                <template x-for="perm in plist" :key="perm">
+                  <th style="padding:0.4rem 0.5rem; font-weight:500; white-space:nowrap;" :title="perm" x-text="labelFor(perm)"></th>
+                </template>
+              </template>
+              <th style="padding:0.4rem;">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            <template x-for="role in roles" :key="role.name">
+              <tr style="border-bottom:1px solid var(--border);">
+                <td style="padding:0.5rem; position:sticky; left:0; background:var(--bg); white-space:nowrap;">
+                  <strong x-text="role.name"></strong>
+                  <span x-show="role.is_system" class="badge neutral" style="margin-left:0.35rem;">system</span>
+                  <div style="font-size:0.7rem; color:var(--text-dim);" x-text="role.user_count + ' user(s)'"></div>
+                </td>
+                <template x-for="(plist, group) in permissionGroups" :key="group">
+                  <template x-for="perm in plist" :key="perm">
+                    <td style="text-align:center; padding:0.4rem;">
+                      <input type="checkbox"
+                             :checked="hasPerm(role, perm)"
+                             :disabled="role.is_system || isLocked(perm)"
+                             @change="togglePerm(role, perm)"
+                             style="width:15px; height:15px; accent-color:var(--accent);">
+                    </td>
+                  </template>
+                </template>
+                <td style="padding:0.4rem; white-space:nowrap;">
+                  <template x-if="!role.is_system">
+                    <span style="display:flex; gap:0.35rem;">
+                      <button class="btn btn-secondary btn-sm" @click="saveRole(role)">Save</button>
+                      <button class="btn btn-secondary btn-sm" x-show="role.user_count === 0"
+                              style="color:#f87171; border-color:rgba(239,68,68,0.3);"
+                              @click="deleteRole(role)">Delete</button>
+                    </span>
+                  </template>
+                  <span x-show="role.is_system" style="font-size:0.75rem; color:var(--text-dim);">locked</span>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Data access (S3 bucket scope) per custom role -->
+      <div style="margin-top:var(--space-lg); border-top:1px solid var(--border); padding-top:var(--space-lg);">
+        <h3 style="font-size:0.9rem; margin-bottom:0.25rem;">Data access — S3 buckets</h3>
+        <p style="font-size:0.72rem; color:var(--text-dim); margin-bottom:0.75rem;">
+          Restrict which S3 prefixes a role may read/write (query tool + pipelines). One prefix per line, e.g.
+          <code>s3://my-bucket/team-a/</code>. Empty allow-list = unrestricted. Deny always wins. The admin role bypasses scoping.
+        </p>
+        <template x-for="role in roles" :key="'ba-' + role.name">
+          <div x-show="!role.is_system" style="border:1px solid var(--border); border-radius:8px; padding:0.75rem; margin-bottom:0.75rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.5rem;">
+              <strong x-text="role.name"></strong>
+              <button class="btn btn-secondary btn-sm" @click="saveRole(role)">Save data access</button>
+            </div>
+            <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+              <div class="form-group" style="margin-bottom:0; flex:1; min-width:220px;">
+                <label style="font-size:0.75rem;">Allowed prefixes</label>
+                <textarea class="form-control" rows="3" x-model="role._allow_text" placeholder="s3://my-bucket/team-a/" style="font-family:var(--font-mono); font-size:0.8rem;"></textarea>
+              </div>
+              <div class="form-group" style="margin-bottom:0; flex:1; min-width:220px;">
+                <label style="font-size:0.75rem;">Denied prefixes</label>
+                <textarea class="form-control" rows="3" x-model="role._deny_text" placeholder="s3://my-bucket/secret/" style="font-family:var(--font-mono); font-size:0.8rem;"></textarea>
+              </div>
+            </div>
+          </div>
+        </template>
+        <p x-show="roles.filter(r => !r.is_system).length === 0" style="font-size:0.8rem; color:var(--text-muted);">
+          No custom roles yet — create one below to scope its bucket access.
+        </p>
+      </div>
+
+      <!-- New role -->
+      <div style="margin-top:var(--space-lg); border-top:1px solid var(--border); padding-top:var(--space-lg);">
+        <h3 style="font-size:0.9rem; margin-bottom:0.5rem;">Create custom role</h3>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap; align-items:flex-end;">
+          <div class="form-group" style="margin-bottom:0;">
+            <label>Name</label>
+            <input type="text" class="form-control" x-model="newRole.name" placeholder="analyst" pattern="[a-z0-9_]+" style="font-family:var(--font-mono);">
+          </div>
+          <div class="form-group" style="margin-bottom:0; flex:1; min-width:200px;">
+            <label>Description</label>
+            <input type="text" class="form-control" x-model="newRole.description" placeholder="Can run pipelines and query, no admin">
+          </div>
+          <button class="btn btn-primary" @click="createRole()">Create role</button>
+        </div>
+        <p style="font-size:0.72rem; color:var(--text-dim); margin-top:0.4rem;">The new role starts with view-only access; tick permissions in the matrix above and press Save.</p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Add User Modal -->
+  <div class="modal-overlay" x-show="modalOpen" x-transition style="display:none;">
+    <div class="modal-content" @click.away="modalOpen = false">
+      <div class="modal-header">
+        <h3 class="card-title">Add User</h3>
+        <button class="modal-close" @click="modalOpen = false">&times;</button>
+      </div>
+
+      <form id="add-user-form"
+            hx-post="/api/users"
+            hx-target="#users-list"
+            hx-swap="innerHTML"
+            @submit="modalOpen = false">
+
+        <div class="form-group">
+          <label>Username</label>
+          <input type="text" name="username" class="form-control" placeholder="john_doe" required x-model="username" pattern="[a-z0-9_]+" title="Lowercase letters, numbers, and underscores only">
+        </div>
+
+        <div class="form-group">
+          <label>Password <span style="color:var(--text-dim); font-weight:400;">(min. 6 characters)</span></label>
+          <input type="password" name="password" class="form-control" required minlength="6" x-model="password">
+        </div>
+
+        <div class="form-group">
+          <label>Role</label>
+          <select name="role" class="form-control" x-model="role">
+            <template x-for="r in roles" :key="r.name">
+              <option :value="r.name" x-text="r.name + (r.description ? ' — ' + r.description : '')"></option>
+            </template>
+          </select>
+        </div>
+
+        <div style="display:flex; justify-content:flex-end; gap:0.75rem; margin-top:var(--space-lg);">
+          <button type="button" class="btn btn-secondary" @click="modalOpen = false">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create user</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function settingsPage(defaultTab) {
+  return {
+    activeTab: defaultTab || 'email',
+    modalOpen: false,
+    username: '',
+    password: '',
+    role: 'viewer',
+    settingsSaving: false,
+    settingsMsg: '',
+    // roles state
+    roles: [],
+    permissionGroups: {},
+    permissionLabels: {},
+    lockedPermissions: [],
+    rolesLoaded: false,
+    roleMsg: '',
+    newRole: { name: '', description: '' },
+
+    init() {
+      // Restore the active tab from the URL hash so a refresh stays put.
+      const h = (window.location.hash || '').replace('#', '');
+      if (['email', 'ai', 'users', 'roles'].includes(h)) {
+        this.activeTab = h;
+      }
+      // Load roles so the "Add user" dropdown is populated and the matrix is ready.
+      this.loadRoles();
+    },
+    setTab(tab) {
+      this.activeTab = tab;
+      try { history.replaceState(null, '', '#' + tab); }
+      catch (e) { window.location.hash = tab; }
+    },
+    openCreate() {
+      this.username = '';
+      this.password = '';
+      this.role = (this.roles[0] && this.roles[0].name) || 'viewer';
+      this.modalOpen = true;
+    },
+    async saveSetting(key, value) {
+      this.settingsSaving = true;
+      this.settingsMsg = '';
+      const formData = new FormData();
+      formData.append('value', value);
+      try {
+        const resp = await fetch('/api/settings/' + key, { method: 'PUT', body: formData });
+        if (resp.ok) {
+          this.settingsMsg = 'Saved!';
+          setTimeout(() => this.settingsMsg = '', 2000);
+        } else {
+          const err = await resp.json();
+          this.settingsMsg = 'Error: ' + (err.detail || 'Failed');
+        }
+      } catch (e) {
+        this.settingsMsg = 'Error: ' + e.message;
+      } finally {
+        this.settingsSaving = false;
+      }
+    },
+    async loadRoles() {
+      try {
+        const r = await fetch('/api/roles');
+        if (r.ok) {
+          const d = await r.json();
+          this.roles = d.roles;
+          this.roles.forEach(r => {
+            r._allow_text = (r.bucket_allow || []).join('\n');
+            r._deny_text = (r.bucket_deny || []).join('\n');
+          });
+          this.permissionGroups = d.permission_groups;
+          this.permissionLabels = d.permission_labels || {};
+          this.lockedPermissions = d.locked_permissions;
+          this.rolesLoaded = true;
+        } else {
+          // Fallback so the user dropdown still works if we lack roles.manage.
+          this.roles = [{name:'viewer'},{name:'editor'},{name:'admin'}];
+        }
+      } catch (e) {
+        this.roles = [{name:'viewer'},{name:'editor'},{name:'admin'}];
+      }
+    },
+    isLocked(perm) { return this.lockedPermissions.includes(perm); },
+    labelFor(perm) { return this.permissionLabels[perm] || (perm.split('.')[1] || perm); },
+    hasPerm(role, perm) {
+      if (role.is_system && role.name === 'admin') return true;   // admin = all
+      if (this.isLocked(perm)) return true;                        // baseline view
+      return (role.permissions || []).includes(perm);
+    },
+    togglePerm(role, perm) {
+      if (role.is_system || this.isLocked(perm)) return;
+      const i = (role.permissions || []).indexOf(perm);
+      if (i >= 0) role.permissions.splice(i, 1);
+      else role.permissions.push(perm);
+    },
+    async saveRole(role) {
+      const toList = t => (t || '').split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+      const r = await fetch('/api/roles/' + role.name, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          description: role.description,
+          permissions: role.permissions,
+          bucket_allow: toList(role._allow_text),
+          bucket_deny: toList(role._deny_text),
+        })
+      });
+      if (r.ok) { this.roleMsg = 'Saved role "' + role.name + '"'; await this.loadRoles(); }
+      else { this.roleMsg = 'Error: ' + ((await r.json()).detail || 'failed'); }
+      setTimeout(() => this.roleMsg = '', 3000);
+    },
+    async createRole() {
+      const r = await fetch('/api/roles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: this.newRole.name, description: this.newRole.description, permissions: [] })
+      });
+      if (r.ok) {
+        this.newRole = { name: '', description: '' };
+        await this.loadRoles();
+        this.roleMsg = 'Role created — tick its permissions and Save';
+      } else {
+        this.roleMsg = 'Error: ' + ((await r.json()).detail || 'failed');
+      }
+      setTimeout(() => this.roleMsg = '', 3500);
+    },
+    async deleteRole(role) {
+      if (!confirm('Delete role "' + role.name + '"? This cannot be undone.')) return;
+      const r = await fetch('/api/roles/' + role.name, { method: 'DELETE' });
+      if (r.ok) { await this.loadRoles(); this.roleMsg = 'Role deleted'; }
+      else { this.roleMsg = 'Error: ' + ((await r.json()).detail || 'failed'); }
+      setTimeout(() => this.roleMsg = '', 3000);
+    }
+  };
+}
+</script>
+{% endblock %}

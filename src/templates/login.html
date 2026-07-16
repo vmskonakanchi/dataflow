@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sign In — Dataflow</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body style="display:flex; align-items:center; justify-content:center; min-height:100vh; background:var(--field);">
+  <div style="width:100%; max-width:380px; padding:1.5rem;">
+
+    <div style="text-align:center; margin-bottom:2rem;">
+      <div class="logo-icon" style="margin:0 auto 1rem; width:44px; height:44px; font-size:1.2rem;">D</div>
+      <h1 style="font-family:var(--font-display); font-size:1.4rem; font-weight:700; color:var(--text); margin:0; letter-spacing:-0.02em;">Dataflow</h1>
+      <p style="color:var(--text-muted); font-size:0.82rem; margin-top:0.4rem;">Sign in to continue</p>
+    </div>
+
+    <div class="card" style="border-left-color:var(--border);">
+      {% if error %}
+      <div style="background:var(--error-dim); border:1px solid rgba(248,113,113,0.3); border-radius:var(--radius); padding:0.65rem 0.85rem; margin-bottom:1.25rem; color:var(--error); font-size:0.82rem;">
+        {{ error }}
+      </div>
+      {% endif %}
+
+      {% if sso_enabled %}
+      <a href="/auth/sso/login" class="btn" style="width:100%; display:flex; align-items:center; justify-content:center; gap:0.5rem; background:#2f2f2f; color:#fff; border:1px solid var(--border); margin-bottom:1rem;">
+        <svg width="16" height="16" viewBox="0 0 23 23" aria-hidden="true"><path fill="#f25022" d="M1 1h10v10H1z"/><path fill="#7fba00" d="M12 1h10v10H12z"/><path fill="#00a4ef" d="M1 12h10v10H1z"/><path fill="#ffb900" d="M12 12h10v10H12z"/></svg>
+        {{ sso_button_label }}
+      </a>
+      <div style="display:flex; align-items:center; gap:0.75rem; margin:0.25rem 0 1rem; color:var(--text-muted); font-size:0.72rem;">
+        <span style="flex:1; height:1px; background:var(--border);"></span>
+        or
+        <span style="flex:1; height:1px; background:var(--border);"></span>
+      </div>
+      {% endif %}
+
+      <form method="POST" action="/login">
+        <div class="form-group">
+          <label for="username">Username</label>
+          <input id="username" type="text" name="username" class="form-control" required autofocus autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input id="password" type="password" name="password" class="form-control" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width:100%; margin-top:var(--space-lg);">
+          Sign in
+        </button>
+      </form>
+    </div>
+
+  </div>
+</body>
+</html>

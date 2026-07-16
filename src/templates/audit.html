@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block content %}
+<div x-data="auditPage()" x-init="load()">
+
+  <div style="margin-bottom:var(--space-xl); display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:1rem;">
+    <div>
+      <h1 style="font-family:var(--font-display); font-size:1.6rem; font-weight:700; letter-spacing:-0.02em; color:var(--text);">Audit Log</h1>
+      <p style="color:var(--text-muted); font-size:0.85rem; margin-top:0.25rem;">Who did what, and when. A JSON copy of every event is also written to stdout for your log pipeline.</p>
+    </div>
+    {% if 'settings.manage' in perms %}
+    <div style="display:flex; align-items:center; gap:0.5rem;">
+      <label style="font-size:0.78rem; color:var(--text-muted);">Retention</label>
+      <input type="number" min="0" step="1" class="form-control" x-model.number="retention" style="width:90px;">
+      <span style="font-size:0.78rem; color:var(--text-muted);">days (0 = forever)</span>
+      <button class="btn btn-secondary btn-sm" @click="saveRetention()">Save</button>
+      <span x-show="retentionMsg" x-text="retentionMsg" style="font-size:0.78rem; color:var(--accent);"></span>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <!-- Filters -->
+    <div style="display:flex; gap:0.75rem; flex-wrap:wrap; align-items:flex-end; margin-bottom:var(--space-lg);">
+      <div class="form-group" style="margin-bottom:0;">
+        <label style="font-size:0.75rem;">User</label>
+        <input type="text" class="form-control" x-model="filters.username" placeholder="any" @keydown.enter="load()" style="width:150px;">
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label style="font-size:0.75rem;">Action</label>
+        <select class="form-control" x-model="filters.action" @change="load()" style="width:180px;">
+          <option value="">any</option>
+          <template x-for="a in actions" :key="a"><option :value="a" x-text="a"></option></template>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:0;">
+        <label style="font-size:0.75rem;">Target type</label>
+        <select class="form-control" x-model="filters.target_type" @change="load()" style="width:150px;">
+          <option value="">any</option>
+          <template x-for="t in targetTypes" :key="t"><option :value="t" x-text="t"></option></template>
+        </select>
+      </div>
+      <button class="btn btn-secondary btn-sm" @click="load()">Apply</button>
+      <button class="btn btn-secondary btn-sm" @click="reset()">Clear</button>
+    </div>
+
+    <div style="overflow-x:auto;">
+      <table style="width:100%; border-collapse:collapse; font-size:0.8rem;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border); text-align:left; color:var(--text-muted);">
+            <th style="padding:0.5rem;">Time</th>
+            <th style="padding:0.5rem;">User</th>
+            <th style="padding:0.5rem;">Role</th>
+            <th style="padding:0.5rem;">Action</th>
+            <th style="padding:0.5rem;">Target</th>
+            <th style="padding:0.5rem;">Detail</th>
+            <th style="padding:0.5rem;">IP</th>
+            <th style="padding:0.5rem;">OK</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="e in entries" :key="e.id">
+            <tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:0.5rem; white-space:nowrap; font-family:var(--font-mono); font-size:0.72rem;" x-text="e.timestamp"></td>
+              <td style="padding:0.5rem;" x-text="e.username || '—'"></td>
+              <td style="padding:0.5rem;" x-text="e.role || '—'"></td>
+              <td style="padding:0.5rem; font-family:var(--font-mono); font-size:0.72rem;" x-text="e.action"></td>
+              <td style="padding:0.5rem;"><span x-text="e.target_type || ''"></span> <strong x-text="e.target_name || ''"></strong></td>
+              <td style="padding:0.5rem; color:var(--text-muted);" x-text="e.detail || ''"></td>
+              <td style="padding:0.5rem; font-family:var(--font-mono); font-size:0.72rem;" x-text="e.ip || ''"></td>
+              <td style="padding:0.5rem;">
+                <span class="badge" :class="e.success ? 'success' : 'neutral'" x-text="e.success ? '✓' : '✕'"></span>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+      <p x-show="entries.length === 0" style="text-align:center; padding:2rem; color:var(--text-muted);">No audit entries.</p>
+    </div>
+
+    <!-- Pagination -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-top:var(--space-md);">
+      <button class="btn btn-secondary btn-sm" @click="prev()" :disabled="offset === 0" x-bind:style="offset === 0 ? 'opacity:0.5;' : ''">← Newer</button>
+      <span style="font-size:0.78rem; color:var(--text-muted);" x-text="'showing ' + entries.length + ' (offset ' + offset + ')'"></span>
+      <button class="btn btn-secondary btn-sm" @click="next()" :disabled="entries.length < limit" x-bind:style="entries.length < limit ? 'opacity:0.5;' : ''">Older →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function auditPage() {
+  return {
+    entries: [],
+    actions: [],
+    targetTypes: [],
+    filters: { username: '', action: '', target_type: '' },
+    limit: 100,
+    offset: 0,
+    retention: {{ audit_retention_days | default(90) }},
+    retentionMsg: '',
+    async saveRetention() {
+      const fd = new FormData();
+      fd.append('value', String(this.retention));
+      const r = await fetch('/api/settings/audit_retention_days', { method: 'PUT', body: fd });
+      this.retentionMsg = r.ok ? 'Saved' : 'Error';
+      setTimeout(() => this.retentionMsg = '', 2500);
+    },
+    async load() {
+      const p = new URLSearchParams();
+      if (this.filters.username) p.set('username', this.filters.username);
+      if (this.filters.action) p.set('action', this.filters.action);
+      if (this.filters.target_type) p.set('target_type', this.filters.target_type);
+      p.set('limit', this.limit);
+      p.set('offset', this.offset);
+      const r = await fetch('/api/audit?' + p.toString());
+      if (r.ok) {
+        const d = await r.json();
+        this.entries = d.entries;
+        this.actions = d.actions;
+        this.targetTypes = d.target_types;
+      }
+    },
+    reset() { this.filters = { username: '', action: '', target_type: '' }; this.offset = 0; this.load(); },
+    next() { this.offset += this.limit; this.load(); },
+    prev() { this.offset = Math.max(0, this.offset - this.limit); this.load(); },
+  };
+}
+</script>
+{% endblock %}
