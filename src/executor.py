@@ -56,8 +56,8 @@ class BaseExecutor(ABC):
     def validate_source(self):
         """Check source path exists and is not empty before running."""
         path = self.pipeline.source_path
-        # For S3 paths, skip local validation
-        if path.startswith("s3://") or path.startswith("gs://"):
+        # For remote paths, skip local validation
+        if path.startswith(("s3://", "gs://", "http://", "https://")):
             return
         # For local paths, check glob matches at least one file
         matches = glob.glob(path)
@@ -85,13 +85,24 @@ class BaseExecutor(ABC):
 
 class DuckDBExecutor(BaseExecutor):
     def _needs_remote_access(self) -> bool:
-        """Check if source, sink, or any join path points to remote storage (S3/GCS)."""
+        """Check if source, sink, or any join path points to remote storage (S3/GCS/HTTP)."""
         paths = [self.pipeline.source_path, self.pipeline.sink_path]
         for t in self.pipeline.transforms:
             if t.type == "join":
                 paths.append(t.right_path)
         return any(
-            p and (p.startswith("s3://") or p.startswith("gs://") or p.startswith("gcs://"))
+            p and (p.startswith(("s3://", "gs://", "gcs://", "http://", "https://")))
+            for p in paths
+        )
+
+    def _needs_s3_credentials(self) -> bool:
+        """Check if any path requires S3/GCS credentials (not needed for plain HTTP)."""
+        paths = [self.pipeline.source_path, self.pipeline.sink_path]
+        for t in self.pipeline.transforms:
+            if t.type == "join":
+                paths.append(t.right_path)
+        return any(
+            p and (p.startswith(("s3://", "gs://", "gcs://")))
             for p in paths
         )
 
@@ -228,11 +239,12 @@ class DuckDBExecutor(BaseExecutor):
             # regardless of dataset size — essential for large writes.
             conn.execute("SET preserve_insertion_order = false")
 
-            # Set up S3/remote access if any path is remote (source, sink, or join)
+            # Set up remote access if any path is remote (source, sink, or join)
             if self._needs_remote_access():
                 conn.execute("INSTALL httpfs; LOAD httpfs;")
-                conn.execute("INSTALL aws; LOAD aws;")
-                conn.execute("CREATE OR REPLACE SECRET (TYPE S3, PROVIDER CREDENTIAL_CHAIN, VALIDATION 'none');")
+                if self._needs_s3_credentials():
+                    conn.execute("INSTALL aws; LOAD aws;")
+                    conn.execute("CREATE OR REPLACE SECRET (TYPE S3, PROVIDER CREDENTIAL_CHAIN, VALIDATION 'none');")
 
             # Count rows extracted
             step = "extract_count"

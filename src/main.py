@@ -1,8 +1,21 @@
+import importlib.metadata
+
 import click
 from api import app  # Expose app so `main:app` / `api:app` is a valid ASGI entrypoint
 
 
+def _get_version() -> str:
+    try:
+        return importlib.metadata.version("dataflow")
+    except importlib.metadata.PackageNotFoundError:
+        return "0.1.0"  # fallback for editable/dev installs
+
+
+__version__ = _get_version()
+
+
 @click.group()
+@click.version_option(version=__version__, prog_name="dataflow")
 def cli():
     """Dataflow — self-hosted data pipeline engine."""
     pass

@@ -1,5 +1,13 @@
 FROM python:3.13-slim
 
+ARG VERSION=0.1.0
+
+LABEL org.opencontainers.image.title="Dataflow"
+LABEL org.opencontainers.image.description="Self-hosted data pipeline engine built on DuckDB"
+LABEL org.opencontainers.image.version="${VERSION}"
+LABEL org.opencontainers.image.source="https://github.com/vmskonakanchi/dataflow"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
 WORKDIR /app
 
 # Copy uv binary from official image for fast dependency resolution
@@ -26,4 +34,3 @@ ENTRYPOINT ["python", "main.py"]
 
 # Default command: start the web server (runs migrations, worker, and scheduler)
 CMD ["server", "--host", "0.0.0.0", "--port", "8000"]
-
