@@ -703,6 +703,61 @@ main.content-area {
   opacity: 1;
 }
 
+[x-cloak] {
+  display: none !important;
+}
+
+.global-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: center;
+  padding: var(--space-lg);
+  background:
+    radial-gradient(circle at 50% 45%, rgba(45, 212, 191, 0.12), transparent 38%),
+    rgba(6, 13, 24, 0.72);
+  backdrop-filter: blur(5px);
+}
+
+.global-loader-panel {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  min-width: min(100%, 320px);
+  padding: 1.1rem 1.25rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: calc(var(--radius) + 3px);
+  background: var(--surface);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.38);
+}
+
+.global-loader-mark {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border: 3px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: global-loader-spin 0.75s linear infinite;
+}
+
+.global-loader-title {
+  color: var(--text);
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.global-loader-label {
+  margin-top: 0.15rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+@keyframes global-loader-spin {
+  to { transform: rotate(360deg); }
+}
+
 /* ═══════════════════════════════════════════════════
    AI CHAT SIDEBAR
    ═══════════════════════════════════════════════════ */

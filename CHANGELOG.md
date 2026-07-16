@@ -7,7 +7,24 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
-## [0.1.0] — 2026-07-11
+## [0.2.0] — 2026-07-16
+
+### Added
+- Comprehensive test suite (124 tests, 74% coverage) covering config schemas, settings database, pipeline executor, background job queue, worker supervision, custom plugins, and LLM assistant.
+- Pipeline template variables for `today`, `yesterday`, and `now`, with
+  Python `strftime` formatting across source, join, and sink strings.
+- Per-pipeline IANA timezone support for template resolution.
+- Global loading overlay for query execution, exports, and user-initiated HTMX
+  requests.
+- Structured public documentation under `docs/`, including a energy data processing reference example.
+
+### Changed
+- Fixed syntax parser bugs in the pipeline executor's SQL JOIN compiler by using safe `left_tbl`/`right_tbl` aliases and rewriting user-supplied ON clause qualifiers.
+- Pipeline and schedule timezone fields use validated IANA timezone dropdowns.
+- The root README is now a concise project landing page linked to the
+  documentation.
+
+## [0.1.0] — 2026-07-16
 
 First consolidated release: the core engine plus the enterprise access, auditing,
 performance, and identity features.
@@ -64,5 +81,6 @@ performance, and identity features.
   password-login.
 - All administrative and data routes enforce explicit permissions server-side.
 
-[Unreleased]: https://github.com/vmskonakanchi/dataflow/compare/v0.1.0...main
+[Unreleased]: https://github.com/vmskonakanchi/dataflow/compare/v0.2.0...main
+[0.2.0]: https://github.com/vmskonakanchi/dataflow/releases/tag/v0.2.0
 [0.1.0]: https://github.com/vmskonakanchi/dataflow/releases/tag/v0.1.0

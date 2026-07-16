@@ -767,6 +767,7 @@
                 this.loading = true;
                 this.errorMessage = "";
                 const startTime = performance.now();
+                startGlobalLoading("Running query...");
 
                 try {
                     const formData = new FormData();
@@ -858,6 +859,7 @@
                     this.elapsedTime = null;
                 } finally {
                     this.loading = false;
+                    stopGlobalLoading();
                 }
             },
 
@@ -900,6 +902,7 @@
                 if (!this.query.trim()) return;
                 this.exporting = true;
                 this.errorMessage = "";
+                startGlobalLoading("Preparing Parquet download...");
                 try {
                     const formData = new FormData();
                     formData.append("query", this.query);
@@ -924,6 +927,7 @@
                     this.errorMessage = err.message || "Export failed";
                 } finally {
                     this.exporting = false;
+                    stopGlobalLoading();
                 }
             },
         }));

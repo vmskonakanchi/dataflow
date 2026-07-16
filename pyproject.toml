@@ -1,6 +1,6 @@
 [project]
 name = "dataflow"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.13"
 description = "Self-hosted data pipeline engine built on DuckDB — SQL transforms, Delta Lake writes, data quality checks, and a dark-mode dashboard."
 license = "Apache-2.0"
@@ -44,7 +44,6 @@ Changelog = "https://github.com/vmskonakanchi/dataflow/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 ai = ["llama-cpp-python>=0.3.32", "huggingface-hub>=1.22.0"]
-ml = ["umap-learn>=0.5.6"]
 dev = ["pytest>=8.0"]
 
 [tool.uv]

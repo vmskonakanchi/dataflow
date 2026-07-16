@@ -10,6 +10,7 @@
   source_path: '',
   sink_path: '',
   sink_format: 'parquet',
+  timezone: 'UTC',
   partition_by: '',
   checkpointing: false,
   memory_limit: '4GB',
@@ -78,6 +79,7 @@
     this.source_path = '';
     this.sink_path = '';
     this.sink_format = 'parquet';
+    this.timezone = 'UTC';
     this.partition_by = '';
     this.checkpointing = false;
     this.memory_limit = '4GB';
@@ -101,6 +103,7 @@
     this.source_path = p.source_path;
     this.sink_path = p.sink_path;
     this.sink_format = p.sink_format || 'parquet';
+    this.timezone = p.timezone || 'UTC';
     this.partition_by = p.partition_by || '';
     this.checkpointing = p.checkpointing || false;
     this.memory_limit = p.memory_limit || '';
@@ -252,6 +255,14 @@
               <label>Threads</label>
               <input type="number" name="threads" class="form-control" placeholder="4" x-model="threads">
             </div>
+          </div>
+          <div class="form-group">
+            <label>Template Timezone <span style="color:var(--text-dim); font-weight:400;">(IANA timezone, used by &#123;&#123;today&#125;&#125;, &#123;&#123;yesterday&#125;&#125;, and &#123;&#123;now&#125;&#125;)</span></label>
+            <select name="timezone" class="form-control" x-model="timezone">
+              {% for timezone_name in timezone_options %}
+              <option value="{{ timezone_name }}">{{ timezone_name }}</option>
+              {% endfor %}
+            </select>
           </div>
           {% if assignable_roles and assignable_roles|length > 1 %}
           <div class="form-group">

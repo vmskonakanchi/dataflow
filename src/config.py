@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 from typing import List, Dict, Optional, Literal, Union, Annotated, Any
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import BaseModel, Field, field_validator, model_validator, StringConstraints, TypeAdapter
 from sqlmodel import SQLModel, Field as SQLField, JSON, Column, create_engine, Session, select
 from sqlalchemy import event
@@ -288,6 +289,7 @@ class PipelineConfig(BaseModel):
     source_path: str
     sink_path: str
     sink_format: Literal["parquet", "delta"] = "parquet"
+    timezone: str = Field(default="UTC", description="IANA timezone used when resolving pipeline template variables")
     partition_by: Optional[str] = Field(default=None, description="Column to partition output by (e.g. 'date')")
     checkpointing: bool = Field(default=False, description="Enable stage-level checkpointing for resume on failure")
     threads: Optional[int] = Field(default=None, ge=1, description="Number of threads for parallel execution")
@@ -309,6 +311,17 @@ class PipelineConfig(BaseModel):
         return v.strip()
     alerts: AlertConfig
 
+    @field_validator("timezone")
+    @classmethod
+    def _validate_timezone(cls, value: str) -> str:
+        if value == "localtime":
+            raise ValueError("timezone must be a named IANA timezone, not 'localtime'")
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError(f"timezone must be a valid IANA timezone, got {value!r}") from exc
+        return value
+
 class RetryConfig(BaseModel):
     max_attempts: int = Field(default=3, ge=1, le=10)
     delay_seconds: int = Field(default=60, ge=10, le=3600)
@@ -329,6 +342,17 @@ class CronJobConfig(BaseModel):
             raise ValueError("schedule must be a valid 5-part cron expression")
         return v
 
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, value: str) -> str:
+        if value == "localtime":
+            raise ValueError("timezone must be a named IANA timezone, not 'localtime'")
+        try:
+            ZoneInfo(value)
+        except ZoneInfoNotFoundError as exc:
+            raise ValueError(f"timezone must be a valid IANA timezone, got {value!r}") from exc
+        return value
+
 # --- Database Tables (SQLModel) ---
 class Pipeline(SQLModel, table=True):
     id: Optional[int] = SQLField(default=None, primary_key=True)
@@ -337,6 +361,7 @@ class Pipeline(SQLModel, table=True):
     source_path: str
     sink_path: str
     sink_format: str = "parquet"
+    timezone: str = "UTC"
     partition_by: Optional[str] = None
     checkpointing: bool = False
     threads: Optional[int] = None
@@ -462,6 +487,7 @@ def load_configs(config_dir: str = None) -> ResolvedConfig:
                 "source_path": p.source_path,
                 "sink_path": p.sink_path,
                 "sink_format": p.sink_format,
+                "timezone": p.timezone,
                 "partition_by": p.partition_by,
                 "checkpointing": p.checkpointing,
                 "threads": p.threads,

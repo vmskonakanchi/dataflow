@@ -30,3 +30,8 @@ scratch/
 # AI models (large binary files)
 models/
 *.gguf
+
+# Pytest / coverage files
+.coverage
+.pytest_cache/
+htmlcov/

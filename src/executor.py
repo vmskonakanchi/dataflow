@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, List
 from config import PipelineConfig, ResolvedConfig, CheckConfig, role_disallowed_paths_by_name
+from pipeline_templates import TemplateResolutionError, resolve_pipeline_templates
 from logger import log_run_start, log_run_success, log_run_failure
 from alerts import send_failure_alert, send_row_count_alert, webhook_failure, webhook_low_row_count
 from transforms import run_plugin, PluginError
@@ -335,9 +336,10 @@ class DuckDBExecutor(BaseExecutor):
                     group_cols = ", ".join(t.group_by)
                     step_sql = f"SELECT {agg_cols} FROM {last_source} GROUP BY {group_cols}"
                 elif t.type == "join":
+                    on_clause = t.on.replace("left.", "left_tbl.").replace("right.", "right_tbl.")
                     step_sql = (
-                        f"SELECT left.*, right.* FROM {last_source} AS left "
-                        f"{t.join_type.upper()} JOIN read_parquet('{t.right_path}') AS right ON {t.on}"
+                        f"SELECT left_tbl.*, right_tbl.* FROM {last_source} AS left_tbl "
+                        f"{t.join_type.upper()} JOIN read_parquet('{t.right_path}') AS right_tbl ON {on_clause}"
                     )
                 else:
                     step_sql = f"SELECT * FROM {last_source}"
@@ -452,4 +454,8 @@ def run_pipeline(pipeline_name: str, resolved_config: ResolvedConfig) -> RunResu
     if not pipeline:
         raise PipelineError(pipeline_name, "init", f"Pipeline '{pipeline_name}' not found in resolved config")
 
-    return DuckDBExecutor(pipeline).execute()
+    try:
+        resolved_pipeline = resolve_pipeline_templates(pipeline)
+    except TemplateResolutionError as exc:
+        raise PipelineError(pipeline.name, "template_resolution", str(exc)) from exc
+    return DuckDBExecutor(resolved_pipeline).execute()

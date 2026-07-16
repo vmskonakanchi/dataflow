@@ -7,6 +7,18 @@
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/static/style.css">
   <script>
+    const globalLoaderRequests = new WeakSet();
+
+    function startGlobalLoading(label) {
+      window.dispatchEvent(new CustomEvent('dataflow:loading-start', {
+        detail: { label: label || 'Processing request...' },
+      }));
+    }
+
+    function stopGlobalLoading() {
+      window.dispatchEvent(new CustomEvent('dataflow:loading-end'));
+    }
+
     // Apply saved theme before first paint to avoid a flash of the wrong theme.
     (function () {
       var saved = localStorage.getItem('dataflow-theme') || 'dark';
@@ -64,7 +76,7 @@
     }
 
     // Surface HTMX request errors (4xx/5xx) as a toast
-    document.body.addEventListener('htmx:responseError', function (evt) {
+    document.addEventListener('htmx:responseError', function (evt) {
       let detail = 'Something went wrong';
       try {
         const parsed = JSON.parse(evt.detail.xhr.responseText);
@@ -74,9 +86,27 @@
       }
       showErrorToast(detail);
     });
+
+    // Cover all user-initiated HTMX actions. Periodic dashboard refreshes are
+    // intentionally silent so they do not interrupt normal browsing.
+    document.addEventListener('htmx:beforeRequest', function (evt) {
+      const trigger = evt.detail.elt?.getAttribute('hx-trigger') || '';
+      if (trigger.includes('every')) return;
+      globalLoaderRequests.add(evt.detail.xhr);
+      startGlobalLoading('Processing request...');
+    });
+    document.addEventListener('htmx:afterRequest', function (evt) {
+      if (!globalLoaderRequests.has(evt.detail.xhr)) return;
+      globalLoaderRequests.delete(evt.detail.xhr);
+      stopGlobalLoading();
+    });
   </script>
 </head>
-<body x-data="{ sidebarOpen: true }">
+<body
+  x-data="{ sidebarOpen: true, globalLoading: 0, globalLoadingLabel: 'Processing request...' }"
+  @dataflow:loading-start.window="globalLoading += 1; globalLoadingLabel = $event.detail?.label || 'Processing request...'"
+  @dataflow:loading-end.window="globalLoading = Math.max(0, globalLoading - 1)"
+>
   <div class="layout">
 
     <!-- Sidebar -->
@@ -162,6 +192,23 @@
         {% block content %}{% endblock %}
       </div>
     </main>
+  </div>
+  <div
+    class="global-loader"
+    x-cloak
+    x-show="globalLoading > 0"
+    x-transition.opacity
+    role="status"
+    aria-live="polite"
+    aria-label="Processing request"
+  >
+    <div class="global-loader-panel">
+      <div class="global-loader-mark" aria-hidden="true"></div>
+      <div>
+        <div class="global-loader-title">Dataflow is working</div>
+        <div class="global-loader-label" x-text="globalLoadingLabel"></div>
+      </div>
+    </div>
   </div>
 </body>
 </html>

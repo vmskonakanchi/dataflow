@@ -5,6 +5,7 @@ import sys
 from typing import Optional
 from pathlib import Path
 from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
 from fastapi import FastAPI, Request, Form, Response, HTTPException, Depends
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -30,6 +31,26 @@ from auth_sso import (
     build_oauth, resolve_sso_user, provision_user, db_role_rank,
     SSO_PROVIDER, SSOError,
 )
+
+TIMEZONE_OPTIONS = tuple(
+    sorted(timezone_name for timezone_name in available_timezones() if timezone_name != "localtime")
+)
+
+
+def _validate_timezone(timezone_name: str) -> None:
+    """Reject invalid timezone names submitted outside the editor dropdown."""
+    if timezone_name == "localtime":
+        raise HTTPException(
+            status_code=400,
+            detail="timezone must be a named IANA timezone, not 'localtime'",
+        )
+    try:
+        ZoneInfo(timezone_name)
+    except ZoneInfoNotFoundError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"timezone must be a valid IANA timezone, got {timezone_name!r}",
+        ) from exc
 
 # Bring the config database schema up to date via Alembic migrations.
 # Falls back to create_all if migrations can't run, so startup is resilient.
@@ -808,6 +829,7 @@ def pipelines_page(request: Request):
             "pipelines": list(resolved.pipelines.values()),
             "p_json": p_json,
             "assignable_roles": assignable_roles,
+            "timezone_options": TIMEZONE_OPTIONS,
         }
     )
 
@@ -830,7 +852,8 @@ def cronjobs_page(request: Request):
             "active_page": "cronjobs",
             "cronjobs": list(resolved.cronjobs.values()),
             "pipelines": list(resolved.pipelines.values()),
-            "cronjobs_json": cronjobs_json
+            "cronjobs_json": cronjobs_json,
+            "timezone_options": TIMEZONE_OPTIONS,
         }
     )
 
@@ -895,6 +918,7 @@ def api_save_pipeline(
     source_path: str = Form(...),
     sink_path: str = Form(...),
     sink_format: str = Form("parquet"),
+    timezone: str = Form("UTC"),
     partition_by: Optional[str] = Form(None),
     checkpointing: str = Form(""),
     threads: Optional[str] = Form(None),
@@ -928,6 +952,7 @@ def api_save_pipeline(
         row_count_below_val = _parse_int(on_row_count_below)
         row_group_size_val = _parse_int(row_group_size)
         target_file_size_val = (target_file_size or "").strip() or None
+        _validate_timezone(timezone)
 
         # Prevent editing a pipeline while it is running
         if original_name and is_pipeline_running(original_name):
@@ -973,6 +998,7 @@ def api_save_pipeline(
                 db_p.source_path = source_path
                 db_p.sink_path = sink_path
                 db_p.sink_format = sink_format
+                db_p.timezone = timezone
                 db_p.partition_by = partition_by or None
                 db_p.checkpointing = checkpointing == "true"
                 db_p.threads = threads_val
@@ -997,6 +1023,7 @@ def api_save_pipeline(
                     source_path=source_path,
                     sink_path=sink_path,
                     sink_format=sink_format,
+                    timezone=timezone,
                     partition_by=partition_by or None,
                     checkpointing=checkpointing == "true",
                     threads=threads_val,
@@ -1078,6 +1105,7 @@ def api_save_cronjob(
 ):
     try:
         check_permission(request, "cronjobs.edit" if original_name else "cronjobs.create")
+        _validate_timezone(timezone)
         retry = {"max_attempts": max_attempts, "delay_seconds": delay_seconds}
         
         with Session(engine) as session:
