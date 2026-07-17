@@ -157,6 +157,145 @@
       if (c.type === 'custom_sql') copy.must_be = parseInt(c.must_be) || 0;
       return copy;
     }));
+  },
+  validateStep(step) {
+    this.errorMessage = '';
+    if (step === 1) {
+      if (!this.name || this.name.trim() === '') {
+        this.errorMessage = 'Pipeline name is required.';
+        return false;
+      }
+      const nameRegex = /^[a-z0-9_]+$/;
+      if (!nameRegex.test(this.name)) {
+        this.errorMessage = 'Pipeline name must be lowercase and snake_case (letters, numbers, underscores).';
+        return false;
+      }
+    }
+    if (step === 2) {
+      if (!this.source_path || this.source_path.trim() === '') {
+        this.errorMessage = 'Source path is required.';
+        return false;
+      }
+      if (!this.sink_path || this.sink_path.trim() === '') {
+        this.errorMessage = 'Sink path is required.';
+        return false;
+      }
+      if (this.target_file_size && this.target_file_size.trim() !== '') {
+        const sizeRegex = /^\s*\d+(\.\d+)?\s*(B|KB|MB|GB|TB)\s*$/i;
+        if (!sizeRegex.test(this.target_file_size)) {
+          this.errorMessage = 'Target file size must look like 200MB, 1.5GB, etc.';
+          return false;
+        }
+      }
+      if (this.row_group_size && parseInt(this.row_group_size) <= 0) {
+        this.errorMessage = 'Row group size must be greater than 0.';
+        return false;
+      }
+      if (this.threads && parseInt(this.threads) <= 0) {
+        this.errorMessage = 'Compute threads must be greater than 0.';
+        return false;
+      }
+    }
+    if (step === 3) {
+      for (let i = 0; i < this.transforms.length; i++) {
+        const t = this.transforms[i];
+        if (t.type === 'select' && (!t.columns || t.columns.trim() === '')) {
+          this.errorMessage = `Step ${i + 1} (Select): Columns / SQL expressions are required.`;
+          return false;
+        }
+        if (t.type === 'filter' && (!t.condition || t.condition.trim() === '')) {
+          this.errorMessage = `Step ${i + 1} (Filter): SQL WHERE condition is required.`;
+          return false;
+        }
+        if (t.type === 'aggregate') {
+          if (!t.group_by || t.group_by.trim() === '') {
+            this.errorMessage = `Step ${i + 1} (Aggregate): Group by columns are required.`;
+            return false;
+          }
+          if (!t.aggregates || t.aggregates.trim() === '') {
+            this.errorMessage = `Step ${i + 1} (Aggregate): Aggregates are required.`;
+            return false;
+          }
+        }
+        if (t.type === 'join') {
+          if (!t.right_path || t.right_path.trim() === '') {
+            this.errorMessage = `Step ${i + 1} (Join): Right source path is required.`;
+            return false;
+          }
+          if (!t.on || t.on.trim() === '') {
+            this.errorMessage = `Step ${i + 1} (Join): ON condition is required.`;
+            return false;
+          }
+        }
+        if (t.type === 'python') {
+          if (!t.function || t.function.trim() === '') {
+            this.errorMessage = `Step ${i + 1} (Python): Function plugin name is required.`;
+            return false;
+          }
+          if (t.params && t.params.trim() !== '') {
+            try { JSON.parse(t.params); }
+            catch (e) {
+              this.errorMessage = `Step ${i + 1} (Python): Params must be valid JSON.`;
+              return false;
+            }
+          }
+        }
+      }
+    }
+    if (step === 4) {
+      for (let i = 0; i < this.checks.length; i++) {
+        const c = this.checks[i];
+        if ((c.type === 'not_null' || c.type === 'unique') && (!c.columns || c.columns.trim() === '')) {
+          this.errorMessage = `Quality Check ${i + 1} (${c.type.toUpperCase()}): Columns are required.`;
+          return false;
+        }
+        if (c.type === 'row_count_min' && (c.value === null || c.value === undefined || parseInt(c.value) < 1)) {
+          this.errorMessage = `Quality Check ${i + 1} (Row Count Min): Minimum row count must be at least 1.`;
+          return false;
+        }
+        if (c.type === 'accepted_values') {
+          if (!c.column || c.column.trim() === '') {
+            this.errorMessage = `Quality Check ${i + 1} (Accepted Values): Column is required.`;
+            return false;
+          }
+          if (!c.values || c.values.trim() === '') {
+            this.errorMessage = `Quality Check ${i + 1} (Accepted Values): Allowed values are required.`;
+            return false;
+          }
+        }
+        if (c.type === 'custom_sql') {
+          if (!c.query || c.query.trim() === '') {
+            this.errorMessage = `Quality Check ${i + 1} (Custom SQL): SQL query is required.`;
+            return false;
+          }
+          if (c.must_be === null || c.must_be === undefined || c.must_be === '') {
+            this.errorMessage = `Quality Check ${i + 1} (Custom SQL): Expected equal value is required.`;
+            return false;
+          }
+        }
+      }
+    }
+    if (step === 5) {
+      if (this.on_failure === 'email' && (!this.email || this.email.trim() === '')) {
+        this.errorMessage = 'Alert email address is required when alert on failure is enabled.';
+        return false;
+      }
+    }
+    return true;
+  },
+  goToStep(targetStep) {
+    if (targetStep < this.wizardStep) {
+      this.errorMessage = '';
+      this.wizardStep = targetStep;
+      return;
+    }
+    for (let s = this.wizardStep; s < targetStep; s++) {
+      if (!this.validateStep(s)) {
+        return;
+      }
+    }
+    this.errorMessage = '';
+    this.wizardStep = targetStep;
   }
 }" @pipeline-saved.window="modalOpen = false">
   <div class="card-header" style="margin-bottom: 2rem;">
@@ -184,10 +323,10 @@
       <div style="display:flex; justify-content:center; gap:0.5rem; margin-bottom:2rem; padding:0 1rem;">
         <template x-for="(label, i) in ['Basics', 'Source & Sink', 'Transforms', 'Quality Checks', 'Alerts']" :key="i">
           <div style="display:flex; align-items:center; gap:0.5rem;">
-            <div @click="editMode && (wizardStep = i+1)"
+            <div @click="editMode && goToStep(i+1)"
                  :style="`width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:600; ${editMode ? 'cursor:pointer;' : ''} ${wizardStep > i+1 ? 'background:var(--success); color:var(--field);' : wizardStep === i+1 ? 'background:var(--accent); color:var(--field);' : 'background:var(--elevated); color:var(--text-muted);'}`"
                  x-text="i+1"></div>
-            <span @click="editMode && (wizardStep = i+1)"
+            <span @click="editMode && goToStep(i+1)"
                   :style="`font-size:0.75rem; ${editMode ? 'cursor:pointer;' : ''} ${wizardStep === i+1 ? 'color:var(--text); font-weight:500;' : 'color:var(--text-muted);'}`"
                   x-text="label" class="wizard-label"></span>
             <span x-show="i < 4" style="color:var(--text-muted); margin: 0 0.25rem;">›</span>
@@ -537,12 +676,12 @@
 
         <!-- Navigation -->
         <div style="display:flex; justify-content:space-between; margin-top:2rem;">
-          <button type="button" class="btn btn-secondary" x-show="wizardStep > 1" @click="wizardStep--">← Back</button>
+          <button type="button" class="btn btn-secondary" x-show="wizardStep > 1" @click="goToStep(wizardStep - 1)">← Back</button>
           <span x-show="wizardStep === 1"></span>
           <div style="display:flex; gap:0.75rem;">
             <button type="button" class="btn btn-secondary" @click="modalOpen = false">Cancel</button>
-            <button type="button" class="btn btn-primary" x-show="wizardStep < 5" @click="wizardStep++">Next →</button>
-            <button type="submit" class="btn btn-primary" x-show="wizardStep === 5">Save Pipeline</button>
+            <button type="button" class="btn btn-primary" x-show="wizardStep < 5" @click="goToStep(wizardStep + 1)">Next →</button>
+            <button type="submit" class="btn btn-primary" x-show="wizardStep === 5" @click="if (!validateStep(5)) $event.preventDefault()">Save Pipeline</button>
           </div>
         </div>
       </form>
