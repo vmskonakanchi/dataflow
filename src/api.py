@@ -15,10 +15,10 @@ from starlette.middleware.sessions import SessionMiddleware
 import bcrypt
 
 from sqlmodel import Session, select
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from config import (
-    engine, init_db, Pipeline, CronJob, User, Role, AuditLog, load_configs, ResolvedConfig,
+    engine, init_db, Pipeline, CronJob, User, Role, AuditLog, load_configs, ResolvedConfig, PipelineConfig,
     seed_roles, permissions_for, ALL_PERMISSIONS, PERMISSION_GROUPS, PERMISSION_LABELS,
     BASELINE_PERMISSIONS, LOCKED_PERMISSIONS, WILDCARD, SYSTEM_ROLES, PAGE_PERMISSIONS,
     extract_s3_paths, role_disallowed_paths,
@@ -813,7 +813,8 @@ def pipelines_page(request: Request):
         return guard
     try:
         resolved = load_configs()
-    except Exception:
+    except Exception as e:
+        logging.exception("Failed to load configurations from database in pipelines_page")
         resolved = ResolvedConfig(pipelines={}, cronjobs={})
         
     p_json = {p.name: p.model_dump_json() for p in resolved.pipelines.values()}
@@ -841,7 +842,8 @@ def cronjobs_page(request: Request):
         return guard
     try:
         resolved = load_configs()
-    except Exception:
+    except Exception as e:
+        logging.exception("Failed to load configurations from database in cronjobs_page")
         resolved = ResolvedConfig(pipelines={}, cronjobs={})
         
     cronjobs_json = {c.name: c.model_dump_json() for c in resolved.cronjobs.values()}
@@ -987,6 +989,30 @@ def api_save_pipeline(
             if denied:
                 raise HTTPException(status_code=403, detail=f"Role '{run_as_role}' cannot access: " + ", ".join(sorted(set(denied))))
 
+        # Validate with PipelineConfig to ensure Pydantic constraints are satisfied before saving
+        try:
+            PipelineConfig.model_validate({
+                "name": name,
+                "description": description,
+                "source_path": source_path,
+                "sink_path": sink_path,
+                "sink_format": sink_format,
+                "timezone": timezone,
+                "partition_by": partition_by or None,
+                "checkpointing": checkpointing == "true",
+                "threads": threads_val,
+                "memory_limit": memory_limit,
+                "run_as": run_as_role,
+                "target_file_size": target_file_size_val,
+                "row_group_size": row_group_size_val,
+                "transforms": transforms,
+                "checks": checks,
+                "alerts": alerts
+            })
+        except ValidationError as e:
+            errors_summary = ", ".join(f"{'.'.join(str(loc) for loc in err['loc'])}: {err['msg']}" for err in e.errors())
+            raise HTTPException(status_code=400, detail=f"Validation failed: {errors_summary}")
+
         with Session(engine) as session:
             if original_name:
                 # Update existing
@@ -1044,7 +1070,7 @@ def api_save_pipeline(
               "pipeline", name, detail=f"run_as={run_as_role}")
         resolved = load_configs()
         p_json = {p.name: p.model_dump_json() for p in resolved.pipelines.values()}
-        return render(
+        response = render(
             request,
             "partials/pipelines_list.html",
             {
@@ -1052,6 +1078,8 @@ def api_save_pipeline(
                 "p_json": p_json
             }
         )
+        response.headers["HX-Trigger"] = "pipeline-saved"
+        return response
     except HTTPException:
         raise
     except Exception as e:

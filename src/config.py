@@ -499,7 +499,11 @@ def load_configs(config_dir: str = None) -> ResolvedConfig:
                 "checks": p.checks,
                 "alerts": p.alerts
             }
-            pipelines_dict[p.name] = pipeline_adapter.validate_python(data)
+            try:
+                pipelines_dict[p.name] = pipeline_adapter.validate_python(data)
+            except Exception as val_err:
+                import logging
+                logging.error(f"Skipping pipeline '{p.name}' due to validation error: {val_err}")
 
         # Load CronJobs
         cronjobs_list = session.exec(select(CronJob)).all()
@@ -514,7 +518,11 @@ def load_configs(config_dir: str = None) -> ResolvedConfig:
                 "enabled": c.enabled,
                 "retry": c.retry
             }
-            cronjobs_dict[c.name] = cronjob_adapter.validate_python(data)
+            try:
+                cronjobs_dict[c.name] = cronjob_adapter.validate_python(data)
+            except Exception as val_err:
+                import logging
+                logging.error(f"Skipping cronjob '{c.name}' due to validation error: {val_err}")
 
     return ResolvedConfig(
         pipelines=pipelines_dict,

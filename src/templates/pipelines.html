@@ -2,6 +2,7 @@
 {% block content %}
 <div x-data="{ 
   modalOpen: false,
+  errorMessage: '',
   wizardStep: 1,
   editMode: false,
   originalName: '',
@@ -72,6 +73,7 @@
   removeCheck(index) { this.checks.splice(index, 1); },
   openCreate() {
     this.editMode = false;
+    this.errorMessage = '';
     this.wizardStep = 1;
     this.originalName = '';
     this.name = '';
@@ -96,6 +98,7 @@
   },
   openEdit(p) {
     this.editMode = true;
+    this.errorMessage = '';
     this.wizardStep = 1;
     this.originalName = p.name;
     this.name = p.name;
@@ -155,7 +158,7 @@
       return copy;
     }));
   }
-}">
+}" @pipeline-saved.window="modalOpen = false">
   <div class="card-header" style="margin-bottom: 2rem;">
     <div>
       <h1 class="card-title" style="font-size: 1.75rem;">Pipelines</h1>
@@ -196,13 +199,19 @@
             hx-post="/api/pipelines" 
             hx-target="#pipelines-list" 
             hx-swap="innerHTML"
-            @submit="modalOpen = false">
+            @htmx:before-request="errorMessage = ''"
+            @htmx:response-error="try { errorMessage = JSON.parse($event.detail.xhr.responseText).detail || $event.detail.xhr.responseText; } catch(e) { errorMessage = $event.detail.xhr.responseText || 'An error occurred'; }">
         
         <input type="hidden" name="original_name" x-model="originalName">
         <input type="hidden" name="transforms_json" :value="serializeTransforms()">
         <input type="hidden" name="checks_json" :value="serializeChecks()">
         <input type="hidden" name="partition_by" x-model="partition_by">
         <input type="hidden" name="checkpointing" :value="checkpointing ? 'true' : ''">
+
+        <!-- Error Banner -->
+        <div x-show="errorMessage" class="form-group" style="margin-bottom: 1.5rem;" x-transition>
+          <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid var(--danger); padding: 0.75rem; border-radius: 6px; color: var(--danger); font-size: 0.85rem;" x-text="errorMessage"></div>
+        </div>
 
         <!-- STEP 1: Basics -->
         <div x-show="wizardStep === 1" x-transition>

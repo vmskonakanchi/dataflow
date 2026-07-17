@@ -19,7 +19,7 @@ from config import (
     engine, init_db, seed_roles,
     PipelineConfig, CronJobConfig, AlertConfig, TransformConfig, CheckConfig,
     extract_s3_paths, path_in_scope, role_disallowed_paths, role_disallowed_paths_by_name,
-    Role, User, ROLE_ADMIN,
+    Role, User, ROLE_ADMIN, Pipeline,
 )
 
 
@@ -268,3 +268,41 @@ def test_seed_roles_keeps_deprecated_role_if_in_use():
         db.delete(user)
         db.delete(dep_role)
         db.commit()
+
+
+def test_load_configs_resilience(caplog):
+    # Clear existing pipelines in the DB
+    with Session(engine) as db:
+        db.execute(config.SQLModel.metadata.tables["pipeline"].delete())
+        db.commit()
+
+        # Add a valid pipeline
+        db.add(Pipeline(
+            name="valid_p",
+            source_path="s3://b/in",
+            sink_path="s3://b/out",
+            sink_format="parquet",
+            timezone="UTC",
+            alerts={"on_failure": "none"}
+        ))
+        # Add an invalid pipeline (threads is negative, which violates Pydantic's threads ge=1 constraint)
+        db.add(Pipeline(
+            name="invalid_p",
+            source_path="s3://b/in",
+            sink_path="s3://b/out",
+            sink_format="parquet",
+            timezone="UTC",
+            threads=-5,  # Invalid!
+            alerts={"on_failure": "none"}
+        ))
+        db.commit()
+
+    import logging
+    # Run load_configs and verify it succeeds
+    with caplog.at_level(logging.ERROR):
+        resolved = config.load_configs()
+    
+    assert "valid_p" in resolved.pipelines
+    assert "invalid_p" not in resolved.pipelines
+    assert any("Skipping pipeline 'invalid_p'" in record.message for record in caplog.records)
+
