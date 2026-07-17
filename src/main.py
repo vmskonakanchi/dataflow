@@ -8,7 +8,15 @@ def _get_version() -> str:
     try:
         return importlib.metadata.version("dataflow")
     except importlib.metadata.PackageNotFoundError:
-        return "0.1.0"  # fallback for editable/dev installs
+        try:
+            import tomllib
+            from pathlib import Path
+            pyproject_path = Path(__file__).resolve().parent.parent / "pyproject.toml"
+            with open(pyproject_path, "rb") as f:
+                data = tomllib.load(f)
+                return data["project"]["version"]
+        except Exception:
+            return "0.2.0"  # fallback fallback
 
 
 __version__ = _get_version()
