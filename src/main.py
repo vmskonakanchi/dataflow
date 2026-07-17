@@ -16,7 +16,7 @@ def _get_version() -> str:
                 data = tomllib.load(f)
                 return data["project"]["version"]
         except Exception:
-            return "0.2.0"  # fallback fallback
+            return "0.1.0"  # fallback fallback
 
 
 __version__ = _get_version()

@@ -1,9 +1,9 @@
 FROM python:3.13-slim
 
-ARG VERSION=0.2.1
+ARG VERSION=0.1.0
 
 LABEL org.opencontainers.image.title="Dataflow"
-LABEL org.opencontainers.image.description="Self-hosted data pipeline engine built on DuckDB"
+LABEL org.opencontainers.image.description="Dataflow"
 LABEL org.opencontainers.image.version="${VERSION}"
 LABEL org.opencontainers.image.source="https://github.com/vmskonakanchi/dataflow"
 LABEL org.opencontainers.image.licenses="Apache-2.0"

@@ -1,6 +1,6 @@
 [project]
 name = "dataflow"
-version = "0.2.1"
+version = "0.1.0"
 requires-python = ">=3.13"
 description = "Self-hosted data pipeline engine built on DuckDB — SQL transforms, Delta Lake writes, data quality checks, and a dark-mode dashboard."
 license = "Apache-2.0"
