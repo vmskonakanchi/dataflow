@@ -10,3 +10,4 @@
 | [Examples](examples/) | End-to-end pipeline examples. |
 | [Enterprise](enterprise/) | SSO, deployment, and production guidance. |
 | [Troubleshooting](troubleshooting/) | Common errors and frequently asked questions. |
+| [Roadmap](roadmap/roadmap.md) | Track what's shipped and what's coming next. |
