@@ -24,6 +24,7 @@
   on_row_count_below: '',
   transforms: [],
   checks: [],
+  existingNames: [{% for p in pipelines %}'{{ p.name }}',{% endfor %}],
 
   // Available Python transform plugins (fetched from the API)
   availablePlugins: [],
@@ -32,6 +33,11 @@
       .then(r => r.json())
       .then(d => { this.availablePlugins = d.plugins || []; })
       .catch(() => { this.availablePlugins = []; });
+  },
+  updateExistingNames() {
+    this.$nextTick(() => {
+      this.existingNames = Array.from(document.querySelectorAll('.pipeline-card')).map(card => card.dataset.name);
+    });
   },
 
   // Code expand modal
@@ -170,6 +176,10 @@
         this.errorMessage = 'Pipeline name must be lowercase and snake_case (letters, numbers, underscores).';
         return false;
       }
+      if ((!this.editMode || this.name !== this.originalName) && this.existingNames.includes(this.name)) {
+        this.errorMessage = 'Pipeline name already exists.';
+        return false;
+      }
     }
     if (step === 2) {
       if (!this.source_path || this.source_path.trim() === '') {
@@ -297,7 +307,7 @@
     this.errorMessage = '';
     this.wizardStep = targetStep;
   }
-}" @pipeline-saved.window="modalOpen = false">
+}" @pipeline-saved.window="modalOpen = false; updateExistingNames()">
   <div class="card-header" style="margin-bottom: 2rem;">
     <div>
       <h1 class="card-title" style="font-size: 1.75rem;">Pipelines</h1>
@@ -307,7 +317,7 @@
   </div>
 
   <!-- Pipelines Grid -->
-  <div class="pipelines-grid" id="pipelines-list">
+  <div class="pipelines-grid" id="pipelines-list" @htmx:after-swap="updateExistingNames()">
     {% include "partials/pipelines_list.html" %}
   </div>
 

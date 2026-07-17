@@ -1,6 +1,6 @@
 {% if pipelines %}
   {% for p in pipelines %}
-    <div class="pipeline-card">
+    <div class="pipeline-card" data-name="{{ p.name }}">
       <div>
         <div class="pipeline-header">
           <div class="pipeline-name">{{ p.name }}</div>
