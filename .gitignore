@@ -35,3 +35,7 @@ models/
 .coverage
 .pytest_cache/
 htmlcov/
+
+# AI Coding Assistant files
+.codex
+.agents
