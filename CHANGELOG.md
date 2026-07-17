@@ -7,6 +7,8 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-07-17
+
 ## [0.2.0] — 2026-07-16
 
 ### Added
@@ -81,6 +83,7 @@ performance, and identity features.
   password-login.
 - All administrative and data routes enforce explicit permissions server-side.
 
-[Unreleased]: https://github.com/vmskonakanchi/dataflow/compare/v0.2.0...main
+[Unreleased]: https://github.com/vmskonakanchi/dataflow/compare/v0.2.1...main
+[0.2.1]: https://github.com/vmskonakanchi/dataflow/releases/tag/v0.2.1
 [0.2.0]: https://github.com/vmskonakanchi/dataflow/releases/tag/v0.2.0
 [0.1.0]: https://github.com/vmskonakanchi/dataflow/releases/tag/v0.1.0
