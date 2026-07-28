@@ -14,7 +14,7 @@
       <div class="pipeline-meta">
         <div class="pipeline-meta-row">
           <span>Source:</span>
-          <span class="pipeline-meta-val" title="{{ p.source_path }}">{{ p.source_path | truncate(35) }}</span>
+          <span class="pipeline-meta-val" title="{{ p.source_path or '' }}">{{ (p.source_path or p.source_config.get('connector_name', '') if p.source_config else '') | truncate(35) }}</span>
         </div>
         <div class="pipeline-meta-row">
           <span>Sink:</span>

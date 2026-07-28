@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, List
 from config import PipelineConfig, ResolvedConfig, CheckConfig, role_disallowed_paths_by_name
+from connectors import get_connector
 from pipeline_templates import TemplateResolutionError, resolve_pipeline_templates
 from logger import log_run_start, log_run_success, log_run_failure
 from alerts import send_failure_alert, send_row_count_alert, webhook_failure, webhook_low_row_count
@@ -72,7 +73,9 @@ class BaseExecutor(ABC):
         run_as = getattr(p, "run_as", None)
         if not run_as:
             return
-        paths = [p.source_path, p.sink_path]
+        # Collect all paths that need scope checking
+        source_path = p.source_path or (p.source_config or {}).get("path")
+        paths = [source_path, p.sink_path]
         for t in p.transforms:
             if getattr(t, "type", None) == "join":
                 paths.append(getattr(t, "right_path", None))
@@ -220,9 +223,29 @@ class DuckDBExecutor(BaseExecutor):
         self._temp_dirs: List[str] = []
 
         try:
-            # Input validation
+            # Input validation via connector
             step = "validate"
-            self.validate_source()
+            source_config = pipeline.source_config
+
+            # Resolve saved connector if referenced by name
+            if source_config.get("connector_name"):
+                from config import get_session, SavedConnector
+                with get_session() as session:
+                    from sqlmodel import select
+                    saved = session.exec(
+                        select(SavedConnector).where(
+                            SavedConnector.name == source_config["connector_name"]
+                        )
+                    ).first()
+                if not saved:
+                    raise PipelineError(
+                        pipeline.name, "validate",
+                        f"Saved connector '{source_config['connector_name']}' not found"
+                    )
+                source_config = saved.config
+                connector = get_connector(saved.connector_type)
+            else:
+                connector = get_connector(pipeline.source_type)
 
             # Enforce the run_as role's data-access (bucket) scope.
             step = "data_access"
@@ -240,17 +263,13 @@ class DuckDBExecutor(BaseExecutor):
             # regardless of dataset size — essential for large writes.
             conn.execute("SET preserve_insertion_order = false")
 
-            # Set up remote access if any path is remote (source, sink, or join)
-            if self._needs_remote_access():
-                conn.execute("INSTALL httpfs; LOAD httpfs;")
-                if self._needs_s3_credentials():
-                    conn.execute("INSTALL aws; LOAD aws;")
-                    conn.execute("CREATE OR REPLACE SECRET (TYPE S3, PROVIDER CREDENTIAL_CHAIN, VALIDATION 'none');")
+            # Delegate source setup to connector (extensions, secrets, auth)
+            step = "source"
+            source_expr = connector.read(conn, source_config)
 
             # Count rows extracted
             step = "extract_count"
-            reader = self._reader(pipeline.source_path)
-            res = conn.execute(f"SELECT COUNT(*) FROM {reader}('{pipeline.source_path}')").fetchone()
+            res = conn.execute(f"SELECT COUNT(*) FROM {source_expr}").fetchone()
             rows_extracted = res[0] if res else 0
 
             # Determine resume point
@@ -262,7 +281,7 @@ class DuckDBExecutor(BaseExecutor):
 
             # Compile and execute transforms step by step
             step = "transform"
-            last_source = f"{reader}('{pipeline.source_path}')"
+            last_source = source_expr
 
             if resume_from >= 0:
                 # Resume from checkpoint
