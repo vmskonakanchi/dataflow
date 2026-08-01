@@ -93,6 +93,7 @@ ROLE_ADMIN = "admin"
 PERMISSION_GROUPS = {
     "Dashboard": ["dashboard.view"],
     "Pipelines": ["pipelines.view", "pipelines.create", "pipelines.edit", "pipelines.delete", "pipelines.run"],
+    "Connectors": ["connectors.view", "connectors.create", "connectors.edit", "connectors.delete"],
     "Schedules": ["cronjobs.view", "cronjobs.create", "cronjobs.edit", "cronjobs.delete", "cronjobs.run"],
     "Query Tool": ["query.run"],
     "Flux AI": ["flux.ask"],
@@ -106,6 +107,8 @@ PERMISSION_LABELS = {
     "dashboard.view": "View",
     "pipelines.view": "View", "pipelines.create": "Create", "pipelines.edit": "Edit",
     "pipelines.delete": "Delete", "pipelines.run": "Run",
+    "connectors.view": "View", "connectors.create": "Create", "connectors.edit": "Edit",
+    "connectors.delete": "Delete",
     "cronjobs.view": "View", "cronjobs.create": "Create", "cronjobs.edit": "Edit",
     "cronjobs.delete": "Delete", "cronjobs.run": "Run",
     "query.run": "Run",
@@ -126,6 +129,7 @@ LOCKED_PERMISSIONS = set()
 PAGE_PERMISSIONS = [
     ("/", "dashboard.view"),
     ("/pipelines", "pipelines.view"),
+    ("/connectors", "connectors.view"),
     ("/cronjobs", "cronjobs.view"),
     ("/query", "query.run"),
     ("/audit", "audit.view"),
@@ -286,7 +290,9 @@ class AlertConfig(BaseModel):
 class PipelineConfig(BaseModel):
     name: NameString
     description: Optional[str] = None
-    source_path: str
+    source_path: Optional[str] = Field(default=None, description="File path, S3 URI, or URL (shorthand for source_type='file')")
+    source_type: str = Field(default="file", description="Connector type: 'file', 'http', or any registered connector")
+    source_config: Optional[dict] = Field(default=None, description="Connector-specific configuration (schema depends on source_type)")
     sink_path: str
     sink_format: Literal["parquet", "delta"] = "parquet"
     timezone: str = Field(default="UTC", description="IANA timezone used when resolving pipeline template variables")
@@ -299,6 +305,17 @@ class PipelineConfig(BaseModel):
     row_group_size: Optional[int] = Field(default=None, ge=1, description="Parquet row group size in rows (advanced tuning)")
     transforms: List[TransformConfig] = []
     checks: List[CheckConfig] = []
+
+    @model_validator(mode="after")
+    def _resolve_source(self) -> "PipelineConfig":
+        """Backward compatibility: if source_path is set but source_config is not,
+        treat it as a file connector with that path."""
+        if self.source_path and not self.source_config:
+            self.source_type = "file"
+            self.source_config = {"path": self.source_path}
+        elif not self.source_path and not self.source_config:
+            raise ValueError("Either source_path or source_config must be provided")
+        return self
 
     @field_validator("target_file_size")
     @classmethod
@@ -358,7 +375,9 @@ class Pipeline(SQLModel, table=True):
     id: Optional[int] = SQLField(default=None, primary_key=True)
     name: str = SQLField(index=True, unique=True, regex=NAME_REGEX)
     description: Optional[str] = None
-    source_path: str
+    source_path: Optional[str] = None
+    source_type: str = SQLField(default="file")
+    source_config: Dict[str, Any] = SQLField(default_factory=dict, sa_column=Column(JSON))
     sink_path: str
     sink_format: str = "parquet"
     timezone: str = "UTC"
@@ -374,6 +393,24 @@ class Pipeline(SQLModel, table=True):
     transforms: List[Dict[str, Any]] = SQLField(default_factory=list, sa_column=Column(JSON))
     checks: List[Dict[str, Any]] = SQLField(default_factory=list, sa_column=Column(JSON))
     alerts: Dict[str, Any] = SQLField(default_factory=dict, sa_column=Column(JSON))
+
+
+class SavedConnector(SQLModel, table=True):
+    """A saved, reusable connector configuration.
+
+    Users create connectors on the Connectors page (name, type, config)
+    and reference them from pipelines. The config dict schema is defined
+    by the connector type's metadata().config_schema.
+    """
+    __tablename__ = "saved_connector"
+
+    id: Optional[int] = SQLField(default=None, primary_key=True)
+    name: str = SQLField(index=True, unique=True)
+    connector_type: str = SQLField(index=True)  # 'file', 'http', 'postgres', ...
+    description: Optional[str] = None
+    config: Dict[str, Any] = SQLField(default_factory=dict, sa_column=Column(JSON))
+    created_at: datetime = SQLField(default_factory=datetime.utcnow)
+    updated_at: datetime = SQLField(default_factory=datetime.utcnow)
 
 class CronJob(SQLModel, table=True):
     id: Optional[int] = SQLField(default=None, primary_key=True)
@@ -485,6 +522,8 @@ def load_configs(config_dir: str = None) -> ResolvedConfig:
                 "name": p.name,
                 "description": p.description,
                 "source_path": p.source_path,
+                "source_type": p.source_type,
+                "source_config": p.source_config,
                 "sink_path": p.sink_path,
                 "sink_format": p.sink_format,
                 "timezone": p.timezone,

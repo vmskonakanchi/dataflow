@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+{% block content %}
+<div x-data="{
+  modalOpen: false,
+  editMode: false,
+  originalName: '',
+  name: '',
+  connector_type: '{% if connector_types %}{{ connector_types.keys()|list|first }}{% endif %}',
+  description: '',
+  config: {},
+  testResult: null,
+  testLoading: false,
+
+  openCreate() {
+    this.editMode = false;
+    this.originalName = '';
+    this.name = '';
+    this.connector_type = '{% if connector_types %}{{ connector_types.keys()|list|first }}{% endif %}';
+    this.description = '';
+    this.config = {};
+    this.testResult = null;
+    this.testLoading = false;
+    this.modalOpen = true;
+  },
+  openEdit(c) {
+    this.editMode = true;
+    this.originalName = c.name;
+    this.name = c.name;
+    this.connector_type = c.connector_type;
+    this.description = c.description || '';
+    this.config = c.config || {};
+    this.testResult = null;
+    this.testLoading = false;
+    this.modalOpen = true;
+  },
+  async testConnection() {
+    this.testLoading = true;
+    this.testResult = null;
+    try {
+      const res = await fetch('/api/connectors/test', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          connector_type: this.connector_type,
+          config: this.config
+        })
+      });
+      this.testResult = await res.json();
+    } catch (e) {
+      this.testResult = {connected: false, message: e.message || 'Request failed'};
+    }
+    this.testLoading = false;
+  },
+  serializeConfig() {
+    document.getElementById('config-hidden').value = JSON.stringify(this.config);
+  }
+}">
+  <div class="card-header" style="margin-bottom: 2rem;">
+    <div>
+      <h1 class="card-title" style="font-size: 1.75rem;">Connectors</h1>
+      <p style="color:var(--text-muted); font-size:0.9rem; margin-top:0.25rem;">Manage reusable data source and sink configurations</p>
+    </div>
+    {% if 'connectors.create' in perms %}<button class="btn btn-primary" @click="openCreate()">+ New Connector</button>{% endif %}
+  </div>
+
+  <!-- Connectors List -->
+  <div class="pipelines-grid" id="connectors-list">
+    {% include "partials/connectors_list.html" %}
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-overlay" x-show="modalOpen" x-transition style="display:none;">
+    <div class="modal-content" @click.away="modalOpen = false">
+      <div class="modal-header">
+        <h3 class="card-title" x-text="editMode ? 'Edit Connector' : 'New Connector'"></h3>
+        <button class="modal-close" @click="modalOpen = false">&times;</button>
+      </div>
+
+      <form id="connector-form"
+            hx-post="/api/connectors"
+            hx-target="#connectors-list"
+            hx-swap="innerHTML"
+            @connector-saved.window="showSuccessToast('Connector saved successfully'); modalOpen = false;">
+
+        <input type="hidden" name="original_name" x-model="originalName">
+        <input type="hidden" name="config" :value="JSON.stringify(config)">
+
+        <div class="form-group">
+          <label>Name</label>
+          <input type="text" name="name" class="form-control" placeholder="my_connector" required x-model="name" :readonly="editMode" :style="editMode ? 'opacity:0.6; cursor:not-allowed;' : ''">
+        </div>
+
+        <div class="form-group">
+          <label>Type</label>
+          <input type="hidden" name="connector_type" :value="connector_type">
+          <select class="form-control" x-model="connector_type" required :disabled="editMode" :style="editMode ? 'opacity:0.6; cursor:not-allowed;' : ''">
+            {% for key, meta in connector_types.items() %}
+            <option value="{{ key }}">{{ meta.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Description</label>
+          <input type="text" name="description" class="form-control" placeholder="Optional description" x-model="description">
+        </div>
+
+        <!-- Dynamic config fields: File connector -->
+        <div x-show="connector_type === 'file'">
+          <div class="form-group">
+            <label>Path</label>
+            <input type="text" class="form-control" placeholder="/data/input.csv or s3://bucket/key"
+                   x-model="config.path">
+          </div>
+        </div>
+
+        <!-- Dynamic config fields: HTTP connector -->
+        <div x-show="connector_type === 'http'">
+          <div class="form-group">
+            <label>URL</label>
+            <input type="text" class="form-control" placeholder="https://api.example.com/data"
+                   x-model="config.url">
+          </div>
+
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem;">
+            <div class="form-group">
+              <label>Auth Type</label>
+              <select class="form-control" x-model="config.auth_type">
+                <option value="">None</option>
+                <option value="bearer">Bearer Token</option>
+                <option value="basic">Basic Auth</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Format</label>
+              <select class="form-control" x-model="config.format">
+                <option value="json">JSON</option>
+                <option value="csv">CSV</option>
+                <option value="parquet">Parquet</option>
+              </select>
+            </div>
+          </div>
+
+          <div x-show="config.auth_type === 'bearer'" class="form-group">
+            <label>Token</label>
+            <input type="password" class="form-control" placeholder="Bearer token"
+                   x-model="config.token">
+          </div>
+
+          <div x-show="config.auth_type === 'basic'" style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem;">
+            <div class="form-group">
+              <label>Username</label>
+              <input type="text" class="form-control" placeholder="Username"
+                     x-model="config.username">
+            </div>
+            <div class="form-group">
+              <label>Password</label>
+              <input type="password" class="form-control" placeholder="Password"
+                     x-model="config.password">
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Response Path (JSONPath for nested data)</label>
+            <input type="text" class="form-control" placeholder="e.g. $.data.items"
+                   x-model="config.response_path">
+          </div>
+        </div>
+
+        <!-- Test Connection -->
+        <div style="margin-top: 1rem; margin-bottom: 1rem;">
+          <button type="button" class="btn btn-secondary" @click="testConnection()" :disabled="testLoading">
+            <span x-show="!testLoading">Test Connection</span>
+            <span x-show="testLoading">Testing...</span>
+          </button>
+          <div x-show="testResult" style="margin-top: 0.5rem;">
+            <span x-show="testResult && testResult.connected" class="badge success">Connected</span>
+            <span x-show="testResult && !testResult.connected" class="badge danger">Failed</span>
+            <span style="margin-left: 0.5rem; font-size: 0.85rem; color: var(--text-muted);" x-text="testResult ? testResult.message : ''"></span>
+            <span x-show="testResult && testResult.latency_ms" style="margin-left: 0.5rem; font-size: 0.8rem; color: var(--text-muted);" x-text="testResult ? '(' + testResult.latency_ms + 'ms)' : ''"></span>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <button type="button" class="btn btn-secondary" @click="modalOpen = false">Cancel</button>
+          <button type="submit" class="btn btn-primary" x-text="editMode ? 'Update Connector' : 'Save Connector'" @click="serializeConfig()"></button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

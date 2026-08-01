@@ -1,0 +1,61 @@
+{% if connectors %}
+  {% for c in connectors %}
+    <div class="pipeline-card">
+      <div>
+        <div class="pipeline-header">
+          <div class="pipeline-name">{{ c.name }}</div>
+          <div>
+            {% if connector_types and c.connector_type in connector_types %}
+              {% set meta = connector_types[c.connector_type] %}
+              {% if 'source' in meta.get('capabilities', []) %}
+              <span class="badge success">source</span>
+              {% endif %}
+              {% if 'sink' in meta.get('capabilities', []) %}
+              <span class="badge neutral">sink</span>
+              {% endif %}
+            {% endif %}
+          </div>
+        </div>
+        {% if c.description %}
+        <div class="pipeline-desc" style="margin-top:0.25rem;">{{ c.description }}</div>
+        {% endif %}
+      </div>
+
+      <div class="pipeline-meta" style="margin-top: 1rem;">
+        <div class="pipeline-meta-row">
+          <span>Type:</span>
+          <span class="pipeline-meta-val">{{ c.connector_type }}</span>
+        </div>
+        <div class="pipeline-meta-row">
+          <span>Created:</span>
+          <span class="pipeline-meta-val">{{ c.created_at.strftime('%Y-%m-%d %H:%M') if c.created_at else '-' }}</span>
+        </div>
+      </div>
+
+      <div class="pipeline-actions">
+        {% if 'connectors.edit' in perms %}
+        <button class="btn btn-secondary btn-sm"
+                @click="openEdit({{ connectors_json[c.name] }})">
+          Edit
+        </button>
+        {% endif %}
+        {% if 'connectors.delete' in perms %}
+        <button class="btn btn-danger btn-sm"
+                hx-delete="/api/connectors/{{ c.name }}"
+                hx-target="#connectors-list"
+                hx-swap="innerHTML"
+                hx-confirm="Are you sure you want to delete connector '{{ c.name }}'?">
+          Delete
+        </button>
+        {% endif %}
+        {% if not ('connectors.edit' in perms or 'connectors.delete' in perms) %}
+        <span style="font-size:0.8rem; color:var(--text-muted);">Read-only</span>
+        {% endif %}
+      </div>
+    </div>
+  {% endfor %}
+{% else %}
+  <div style="grid-column: 1 / -1; text-align:center; padding:5rem; color:var(--text-muted);">
+    No connectors configured. Click the button above to create one.
+  </div>
+{% endif %}

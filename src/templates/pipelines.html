@@ -1,15 +1,21 @@
 {% extends "base.html" %}
 {% block content %}
+<script type="application/json" id="_connectors_data">{{ saved_connectors_json | tojson }}</script>
 <div x-data="{ 
   modalOpen: false,
   errorMessage: '',
   wizardStep: 1,
   editMode: false,
+  _connectors: {},
   originalName: '',
   name: '',
   description: '',
   source_path: '',
+  source_type: 'file',
+  source_config: {auth_type: 'none', format: 'json'},
+  saved_connector_name: '',
   sink_path: '',
+  sink_connector_name: '',
   sink_format: 'parquet',
   timezone: 'UTC',
   partition_by: '',
@@ -33,6 +39,7 @@
       .then(r => r.json())
       .then(d => { this.availablePlugins = d.plugins || []; })
       .catch(() => { this.availablePlugins = []; });
+    this._connectors = JSON.parse(document.getElementById('_connectors_data').textContent);
   },
   updateExistingNames() {
     this.$nextTick(() => {
@@ -85,7 +92,11 @@
     this.name = '';
     this.description = '';
     this.source_path = '';
+    this.source_type = 'file';
+    this.source_config = {auth_type: 'none', format: 'json'};
+    this.saved_connector_name = '';
     this.sink_path = '';
+    this.sink_connector_name = '';
     this.sink_format = 'parquet';
     this.timezone = 'UTC';
     this.partition_by = '';
@@ -109,8 +120,12 @@
     this.originalName = p.name;
     this.name = p.name;
     this.description = p.description || '';
-    this.source_path = p.source_path;
+    this.source_path = p.source_path || '';
+    this.source_type = p.source_type || 'file';
+    this.source_config = p.source_config || {};
+    this.saved_connector_name = (p.source_config && p.source_config.connector_name) || '';
     this.sink_path = p.sink_path;
+    this.sink_connector_name = '';
     this.sink_format = p.sink_format || 'parquet';
     this.timezone = p.timezone || 'UTC';
     this.partition_by = p.partition_by || '';
@@ -182,13 +197,31 @@
       }
     }
     if (step === 2) {
-      if (!this.source_path || this.source_path.trim() === '') {
-        this.errorMessage = 'Source path is required.';
+      if (this.source_type === 'file' && (!this.source_path || this.source_path.trim() === '') && !this.saved_connector_name) {
+        this.errorMessage = 'Source path is required (or select a saved connector).';
         return false;
       }
-      if (!this.sink_path || this.sink_path.trim() === '') {
-        this.errorMessage = 'Sink path is required.';
+      if (this.source_type !== 'file' && !this.saved_connector_name) {
+        this.errorMessage = 'Please select a connector.';
         return false;
+      }
+      if ((!this.sink_path || this.sink_path.trim() === '') && !this.sink_connector_name) {
+        this.errorMessage = 'Sink path is required (or select a saved connector).';
+        return false;
+      }
+      if (this.sink_path || this.sink_connector_name) {
+        let checkPath = this.sink_path || '';
+        if (this.sink_connector_name && !checkPath) {
+          const picked = this._connectors[this.sink_connector_name];
+          if (picked && picked.config) checkPath = picked.config.path || '';
+        }
+        if (checkPath) {
+          const sp = checkPath.trim().toLowerCase();
+          if (sp.endsWith('.csv') || sp.endsWith('.tsv') || sp.endsWith('.json') || sp.endsWith('.jsonl') || sp.endsWith('.ndjson')) {
+            this.errorMessage = `Sink path ends in .${sp.split('.').pop()} — Dataflow only supports Parquet and Delta Lake as output formats. Use a .parquet extension or a directory path.`;
+            return false;
+          }
+        }
       }
       if (this.target_file_size && this.target_file_size.trim() !== '') {
         const sizeRegex = /^\s*\d+(\.\d+)?\s*(B|KB|MB|GB|TB)\s*$/i;
@@ -201,12 +234,14 @@
         this.errorMessage = 'Row group size must be greater than 0.';
         return false;
       }
+    }
+    if (step === 3) {
       if (this.threads && parseInt(this.threads) <= 0) {
         this.errorMessage = 'Compute threads must be greater than 0.';
         return false;
       }
     }
-    if (step === 3) {
+    if (step === 4) {
       for (let i = 0; i < this.transforms.length; i++) {
         const t = this.transforms[i];
         if (t.type === 'select' && (!t.columns || t.columns.trim() === '')) {
@@ -252,7 +287,7 @@
         }
       }
     }
-    if (step === 4) {
+    if (step === 5) {
       for (let i = 0; i < this.checks.length; i++) {
         const c = this.checks[i];
         if ((c.type === 'not_null' || c.type === 'unique') && (!c.columns || c.columns.trim() === '')) {
@@ -323,23 +358,23 @@
 
   <!-- Wizard Modal -->
   <div class="modal-overlay" x-show="modalOpen" x-transition style="display:none;">
-    <div class="modal-content" style="max-width: 700px;">
+    <div class="modal-content" style="max-width: 800px;">
       <div class="modal-header">
         <h3 class="card-title" x-text="editMode ? 'Edit Pipeline' : 'Create Pipeline'"></h3>
         <button class="modal-close" @click="modalOpen = false">&times;</button>
       </div>
 
       <!-- Progress Steps -->
-      <div style="display:flex; justify-content:center; gap:0.5rem; margin-bottom:2rem; padding:0 1rem;">
-        <template x-for="(label, i) in ['Basics', 'Source & Sink', 'Transforms', 'Quality Checks', 'Alerts']" :key="i">
+      <div style="display:flex; justify-content:center; gap:0.5rem; margin-bottom:2rem; padding:0 1rem; flex-wrap:wrap;">
+        <template x-for="(label, i) in ['Basics', 'Source & Sink', 'Execution', 'Transforms', 'Checks', 'Alerts']" :key="i">
           <div style="display:flex; align-items:center; gap:0.5rem;">
             <div @click="editMode && goToStep(i+1)"
-                 :style="`width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:600; ${editMode ? 'cursor:pointer;' : ''} ${wizardStep > i+1 ? 'background:var(--success); color:var(--field);' : wizardStep === i+1 ? 'background:var(--accent); color:var(--field);' : 'background:var(--elevated); color:var(--text-muted);'}`"
+                 :style="`min-width:28px; width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:600; ${editMode ? 'cursor:pointer;' : ''} ${wizardStep > i+1 ? 'background:var(--success); color:var(--field);' : wizardStep === i+1 ? 'background:var(--accent); color:var(--field);' : 'background:var(--elevated); color:var(--text-muted);'}`"
                  x-text="i+1"></div>
             <span @click="editMode && goToStep(i+1)"
                   :style="`font-size:0.75rem; ${editMode ? 'cursor:pointer;' : ''} ${wizardStep === i+1 ? 'color:var(--text); font-weight:500;' : 'color:var(--text-muted);'}`"
                   x-text="label" class="wizard-label"></span>
-            <span x-show="i < 4" style="color:var(--text-muted); margin: 0 0.25rem;">›</span>
+            <span x-show="i < 5" style="color:var(--text-muted); margin: 0 0.25rem;">›</span>
           </div>
         </template>
       </div>
@@ -352,6 +387,9 @@
             @htmx:response-error="try { errorMessage = JSON.parse($event.detail.xhr.responseText).detail || $event.detail.xhr.responseText; } catch(e) { errorMessage = $event.detail.xhr.responseText || 'An error occurred'; }">
         
         <input type="hidden" name="original_name" x-model="originalName">
+        <input type="hidden" name="sink_path" :value="sink_path">
+        <input type="hidden" name="source_type" :value="source_type">
+        <input type="hidden" name="source_config_json" :value="(source_type === 'file' && !saved_connector_name) ? JSON.stringify({}) : JSON.stringify({connector_name: saved_connector_name})">
         <input type="hidden" name="transforms_json" :value="serializeTransforms()">
         <input type="hidden" name="checks_json" :value="serializeChecks()">
         <input type="hidden" name="partition_by" x-model="partition_by">
@@ -377,14 +415,86 @@
         <!-- STEP 2: Source & Sink -->
         <div x-show="wizardStep === 2" x-transition>
           <div class="form-group">
-            <label>Source Path (supports *.json, *.csv, *.parquet globs)<span class="req">*</span></label>
-            <input type="text" name="source_path" class="form-control" placeholder="s3://bucket/raw/events/*.json" required x-model="source_path" style="font-family:var(--font-mono); font-size:0.85rem;">
+            <label>Source Type<span class="req">*</span></label>
+            <select class="form-control" x-model="source_type" @change="source_config = {auth_type: 'none', format: 'json'}; saved_connector_name = ''; source_path = '';">
+              <option value="file">File / URL</option>
+              {% for ctype, cmeta in connector_types.items() if ctype != 'file' %}
+              <option value="{{ ctype }}">{{ cmeta.get('name', ctype) }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <!-- File type: pick saved connector OR type path directly -->
+          <div x-show="source_type === 'file'">
+            {% if saved_connectors %}
+            {% set file_connectors = saved_connectors|selectattr('connector_type', 'equalto', 'file')|list %}
+            {% if file_connectors %}
+            <div class="form-group">
+              <label>Connector</label>
+              <select class="form-control" x-model="saved_connector_name" @change="
+                if (saved_connector_name) {
+                  const picked = _connectors[saved_connector_name];
+                  if (picked && picked.config && picked.config.path) source_path = picked.config.path;
+                } else {
+                  source_path = '';
+                }
+              ">
+                <option value="">— enter path manually —</option>
+                {% for c in file_connectors %}
+                <option value="{{ c.name }}">{{ c.name }}{% if c.description %} — {{ c.description }}{% endif %}</option>
+                {% endfor %}
+              </select>
+            </div>
+            {% endif %}
+            {% endif %}
+            <div class="form-group" x-show="!saved_connector_name">
+              <label>Source Path<span class="req">*</span></label>
+              <input type="text" name="source_path" class="form-control" placeholder="s3://bucket/raw/events/*.json or /data/file.parquet" x-model="source_path" style="font-family:var(--font-mono); font-size:0.85rem;">
+              <span style="font-size:0.72rem; color:var(--text-dim); margin-top:0.25rem; display:block;">
+                Local paths (supports globs), S3, GCS, or HTTP/HTTPS URLs. Formats: .parquet, .json, .csv
+              </span>
+            </div>
+          </div>
+
+          <!-- Non-file types: pick a saved connector -->
+          <div x-show="source_type !== 'file'">
+            <div class="form-group">
+              <label>Connector<span class="req">*</span></label>
+              <select class="form-control" x-model="saved_connector_name">
+                <option value="">— select a connector —</option>
+                {% for c in saved_connectors %}
+                <template x-if="'{{ c.connector_type }}' === source_type">
+                  <option value="{{ c.name }}">{{ c.name }}{% if c.description %} — {{ c.description }}{% endif %}</option>
+                </template>
+                {% endfor %}
+              </select>
+              <span style="font-size:0.72rem; color:var(--text-dim); margin-top:0.25rem; display:block;">
+                Configure connectors on the <a href="/connectors" style="color:var(--primary);">Connectors page</a>.
+              </span>
+            </div>
           </div>
           <div class="form-group">
-            <label>Sink Path (output destination)<span class="req">*</span></label>
-            <input type="text" name="sink_path" class="form-control" placeholder="s3://bucket/clean/events" required x-model="sink_path" style="font-family:var(--font-mono); font-size:0.85rem;">
+            <label>Sink Connector</label>
+            <select class="form-control" x-model="sink_connector_name" @change="
+              if (sink_connector_name) {
+                const picked = _connectors[sink_connector_name];
+                if (picked && picked.config && picked.config.path) sink_path = picked.config.path;
+              } else {
+                sink_path = '';
+              }
+            ">
+              <option value="">— enter path manually —</option>
+              {% set sink_connectors = saved_connectors|selectattr('connector_type', 'equalto', 'file')|list %}
+              {% for c in sink_connectors %}
+              <option value="{{ c.name }}" x-show="saved_connector_name !== '{{ c.name }}'">{{ c.name }}{% if c.description %} — {{ c.description }}{% endif %}</option>
+              {% endfor %}
+            </select>
           </div>
-          <div style="display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+          <div class="form-group" x-show="!sink_connector_name">
+            <label>Sink Path (output destination)<span class="req">*</span></label>
+            <input type="text" class="form-control" placeholder="s3://bucket/clean/events" x-model="sink_path" style="font-family:var(--font-mono); font-size:0.85rem;">
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
             <div class="form-group">
               <label>Sink Format</label>
               <select name="sink_format" class="form-control" x-model="sink_format">
@@ -396,11 +506,38 @@
               <label>Partition By (optional)</label>
               <input type="text" class="form-control" placeholder="date" x-model="partition_by">
             </div>
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+              <label>Target file size <span style="color:var(--text-dim); font-weight:400;">(Parquet sink)</span></label>
+              <input type="text" name="target_file_size" class="form-control" placeholder="e.g. 200MB (blank = single file)" x-model="target_file_size">
+              <span style="font-size:0.72rem; color:var(--text-dim); margin-top:0.25rem; display:block;">
+                Splits the output into multiple ~this-size files. Leave blank for one file.
+              </span>
+            </div>
+            <div class="form-group">
+              <label>Row group size <span style="color:var(--text-dim); font-weight:400;">(advanced)</span></label>
+              <input type="number" name="row_group_size" class="form-control" placeholder="122880" x-model="row_group_size">
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 3: Execution -->
+        <div x-show="wizardStep === 3" x-transition>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
             <div class="form-group">
               <label>Checkpointing</label>
               <select class="form-control" x-model="checkpointing">
                 <option :value="false">Disabled</option>
                 <option :value="true">Enabled (resume on failure)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Template Timezone</label>
+              <select name="timezone" class="form-control" x-model="timezone">
+                {% for timezone_name in timezone_options %}
+                <option value="{{ timezone_name }}">{{ timezone_name }}</option>
+                {% endfor %}
               </select>
             </div>
           </div>
@@ -414,17 +551,9 @@
               <input type="number" name="threads" class="form-control" placeholder="4" x-model="threads">
             </div>
           </div>
-          <div class="form-group">
-            <label>Template Timezone <span style="color:var(--text-dim); font-weight:400;">(IANA timezone, used by &#123;&#123;today&#125;&#125;, &#123;&#123;yesterday&#125;&#125;, and &#123;&#123;now&#125;&#125;)</span></label>
-            <select name="timezone" class="form-control" x-model="timezone">
-              {% for timezone_name in timezone_options %}
-              <option value="{{ timezone_name }}">{{ timezone_name }}</option>
-              {% endfor %}
-            </select>
-          </div>
           {% if assignable_roles and assignable_roles|length > 1 %}
           <div class="form-group">
-            <label>Run as role <span style="color:var(--text-dim); font-weight:400;">(data-access scope this pipeline runs under)</span></label>
+            <label>Run as role <span style="color:var(--text-dim); font-weight:400;">(data-access scope)</span></label>
             <select name="run_as" class="form-control" x-model="run_as">
               <option value="">(creator's role)</option>
               {% for rn in assignable_roles %}
@@ -436,23 +565,10 @@
             </span>
           </div>
           {% endif %}
-          <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-            <div class="form-group">
-              <label>Target file size <span style="color:var(--text-dim); font-weight:400;">(Parquet sink)</span></label>
-              <input type="text" name="target_file_size" class="form-control" placeholder="e.g. 200MB (blank = single file)" x-model="target_file_size">
-              <span style="font-size:0.72rem; color:var(--text-dim); margin-top:0.25rem; display:block;">
-                Splits the output into multiple ~this-size files (better for S3/parallel reads). Leave blank for one file.
-              </span>
-            </div>
-            <div class="form-group">
-              <label>Row group size <span style="color:var(--text-dim); font-weight:400;">(advanced)</span></label>
-              <input type="number" name="row_group_size" class="form-control" placeholder="122880" x-model="row_group_size">
-            </div>
-          </div>
         </div>
 
-        <!-- STEP 3: Transforms -->
-        <div x-show="wizardStep === 3" x-transition>
+        <!-- STEP 4: Transforms -->
+        <div x-show="wizardStep === 4" x-transition>
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
             <span style="font-weight:500;">Transformations (Sequential)</span>
             <span style="display:flex; gap:0.5rem;">
@@ -574,8 +690,8 @@
           </div>
         </div>
 
-        <!-- STEP 4: Quality Checks -->
-        <div x-show="wizardStep === 4" x-transition>
+        <!-- STEP 5: Quality Checks & Alerts -->
+        <div x-show="wizardStep === 5" x-transition>
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
             <span style="font-weight:500;">Data Quality Checks</span>
             <span style="display:flex; gap:0.5rem; flex-wrap:wrap;">
@@ -651,32 +767,32 @@
           </div>
         </div>
 
-        <!-- STEP 5: Alerts -->
-        <div x-show="wizardStep === 5" x-transition>
-          <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-            <div class="form-group">
-              <label>On Failure</label>
-              <select name="on_failure" class="form-control" x-model="on_failure">
-                <option value="none">No alert</option>
-                <option value="email">Email Notification</option>
-              </select>
+        <!-- Alerts section (Step 6) -->
+        <div x-show="wizardStep === 6" x-transition>
+            <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+              <div class="form-group">
+                <label>On Failure</label>
+                <select name="on_failure" class="form-control" x-model="on_failure">
+                  <option value="none">No alert</option>
+                  <option value="email">Email Notification</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Alert if Row Count Below</label>
+                <input type="number" name="on_row_count_below" class="form-control" placeholder="100" x-model="on_row_count_below">
+              </div>
             </div>
-            <div class="form-group">
-              <label>Alert if Row Count Below</label>
-              <input type="number" name="on_row_count_below" class="form-control" placeholder="100" x-model="on_row_count_below">
+            <div class="form-group" x-show="on_failure === 'email'" x-transition>
+              <label>Alert Email Address<span class="req">*</span></label>
+              <input type="email" name="email" class="form-control" placeholder="alerts@mycompany.com" :required="on_failure === 'email'" x-model="email">
             </div>
-          </div>
-          <div class="form-group" x-show="on_failure === 'email'" x-transition>
-            <label>Alert Email Address<span class="req">*</span></label>
-            <input type="email" name="email" class="form-control" placeholder="alerts@mycompany.com" :required="on_failure === 'email'" x-model="email">
-          </div>
 
           <!-- Summary -->
           <div style="margin-top:2rem; padding:1rem; background:var(--bg-tertiary); border-radius:8px; font-size:0.85rem;">
             <strong>Pipeline Summary</strong>
             <div style="display:grid; grid-template-columns: 1fr 1fr; gap:0.5rem; margin-top:0.75rem; color:var(--text-muted);">
               <span>Name: <span x-text="name" style="color:var(--text-primary)"></span></span>
-              <span>Source: <span x-text="source_path || '—'" style="color:var(--text-primary); word-break:break-all;"></span></span>
+              <span>Source: <span x-text="source_type === 'file' ? (source_path || '—') : (saved_connector_name || '—')" style="color:var(--text-primary); word-break:break-all;"></span></span>
               <span>Format: <span x-text="sink_format" style="color:var(--text-primary)"></span></span>
               <span>Transforms: <span x-text="transforms.length + ' steps'" style="color:var(--text-primary)"></span></span>
               <span>Checks: <span x-text="checks.length + ' rules'" style="color:var(--text-primary)"></span></span>
@@ -690,8 +806,8 @@
           <span x-show="wizardStep === 1"></span>
           <div style="display:flex; gap:0.75rem;">
             <button type="button" class="btn btn-secondary" @click="modalOpen = false">Cancel</button>
-            <button type="button" class="btn btn-primary" x-show="wizardStep < 5" @click="goToStep(wizardStep + 1)">Next →</button>
-            <button type="submit" class="btn btn-primary" x-show="wizardStep === 5" @click="if (!validateStep(5)) $event.preventDefault()">Save Pipeline</button>
+            <button type="button" class="btn btn-primary" x-show="wizardStep < 6" @click="goToStep(wizardStep + 1)">Next →</button>
+            <button type="submit" class="btn btn-primary" x-show="wizardStep === 6" @click="if (!validateStep(6)) $event.preventDefault()">Save Pipeline</button>
           </div>
         </div>
       </form>

@@ -19,6 +19,7 @@ from pydantic import BaseModel, ValidationError
 
 from config import (
     engine, init_db, Pipeline, CronJob, User, Role, AuditLog, load_configs, ResolvedConfig, PipelineConfig,
+    SavedConnector,
     seed_roles, permissions_for, ALL_PERMISSIONS, PERMISSION_GROUPS, PERMISSION_LABELS,
     BASELINE_PERMISSIONS, LOCKED_PERMISSIONS, WILDCARD, SYSTEM_ROLES, PAGE_PERMISSIONS,
     extract_s3_paths, role_disallowed_paths,
@@ -31,6 +32,7 @@ from auth_sso import (
     build_oauth, resolve_sso_user, provision_user, db_role_rank,
     SSO_PROVIDER, SSOError,
 )
+from connectors import available_connectors, get_connector
 
 TIMEZONE_OPTIONS = tuple(
     sorted(timezone_name for timezone_name in available_timezones() if timezone_name != "localtime")
@@ -822,6 +824,14 @@ def pipelines_page(request: Request):
     # to their own role (enforced server-side too).
     user = getattr(request.state, "user", None)
     assignable_roles = _all_role_names() if (user and _role_is_super(user.role)) else ([user.role] if user else [])
+    # Load saved connectors for source dropdown
+    with Session(engine) as session:
+        saved_connectors = session.exec(select(SavedConnector)).all()
+    # Pre-serialize connector configs for JavaScript access in templates
+    saved_connectors_json = {
+        c.name: {"name": c.name, "connector_type": c.connector_type, "config": c.config, "description": c.description}
+        for c in saved_connectors
+    }
     return render(
         request,
         "pipelines.html",
@@ -831,6 +841,9 @@ def pipelines_page(request: Request):
             "p_json": p_json,
             "assignable_roles": assignable_roles,
             "timezone_options": TIMEZONE_OPTIONS,
+            "saved_connectors": saved_connectors,
+            "saved_connectors_json": saved_connectors_json,
+            "connector_types": available_connectors(),
         }
     )
 
@@ -917,8 +930,10 @@ def api_save_pipeline(
     original_name: str = Form(""),
     name: str = Form(...),
     description: Optional[str] = Form(None),
-    source_path: str = Form(...),
-    sink_path: str = Form(...),
+    source_path: Optional[str] = Form(None),
+    source_type: str = Form("file"),
+    source_config_json: str = Form("{}"),
+    sink_path: Optional[str] = Form(None),
     sink_format: str = Form("parquet"),
     timezone: str = Form("UTC"),
     partition_by: Optional[str] = Form(None),
@@ -940,6 +955,35 @@ def api_save_pipeline(
         check_permission(request, "pipelines.edit" if original_name else "pipelines.create")
         transforms = json.loads(transforms_json)
         checks = json.loads(checks_json)
+        source_config = json.loads(source_config_json)
+
+        # Backward compat: if source_type is "file" and source_path is given,
+        # ensure source_config has the path
+        if source_type == "file" and source_path and not source_config.get("connector_name"):
+            source_config["path"] = source_path
+        # Any type with a saved connector reference: validate it exists
+        elif source_config.get("connector_name"):
+            connector_name = source_config["connector_name"]
+            with Session(engine) as s:
+                saved = s.exec(select(SavedConnector).where(SavedConnector.name == connector_name)).first()
+            if not saved:
+                raise HTTPException(status_code=400, detail=f"Saved connector '{connector_name}' not found")
+            # Store the connector reference — executor resolves at runtime
+            source_config = {"connector_name": connector_name}
+            source_path = None
+
+        # Ensure sink_path is not empty string
+        sink_path = (sink_path or "").strip() or None
+
+        # If sink_path is still None, try to resolve from sink connector in source_config
+        # (sink connector autofills the path, but if it wasn't submitted, look it up)
+        if not sink_path and source_config_json:
+            # Check if there's a sink_connector_name in the form (future: add explicit field)
+            # For now, the client should always submit sink_path (autofilled from connector)
+            pass
+
+        if not sink_path:
+            raise HTTPException(status_code=400, detail="Sink path is required")
 
         # Parse optional integer fields — empty strings become None
         def _parse_int(v):
@@ -981,7 +1025,7 @@ def api_save_pipeline(
             raise HTTPException(status_code=403, detail="You may only run a pipeline as your own role")
         # Every source/sink/join path must be within the run_as role's bucket scope.
         if run_as_role:
-            paths = [source_path, sink_path]
+            paths = [source_path or source_config.get("path") or source_config.get("url"), sink_path]
             for t in transforms:
                 if isinstance(t, dict) and t.get("type") == "join" and t.get("right_path"):
                     paths.append(t["right_path"])
@@ -989,12 +1033,25 @@ def api_save_pipeline(
             if denied:
                 raise HTTPException(status_code=403, detail=f"Role '{run_as_role}' cannot access: " + ", ".join(sorted(set(denied))))
 
+        # Validate sink path extension
+        if sink_path:
+            sp_lower = sink_path.strip().lower()
+            bad_extensions = ('.csv', '.tsv', '.json', '.jsonl', '.ndjson')
+            if any(sp_lower.endswith(ext) for ext in bad_extensions):
+                ext = '.' + sp_lower.rsplit('.', 1)[-1]
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Sink path ends in '{ext}' but Dataflow only supports Parquet and Delta Lake as output formats. Use a .parquet extension or a directory path."
+                )
+
         # Validate with PipelineConfig to ensure Pydantic constraints are satisfied before saving
         try:
             PipelineConfig.model_validate({
                 "name": name,
                 "description": description,
                 "source_path": source_path,
+                "source_type": source_type,
+                "source_config": source_config,
                 "sink_path": sink_path,
                 "sink_format": sink_format,
                 "timezone": timezone,
@@ -1022,6 +1079,8 @@ def api_save_pipeline(
                 db_p.name = name
                 db_p.description = description
                 db_p.source_path = source_path
+                db_p.source_type = source_type
+                db_p.source_config = source_config
                 db_p.sink_path = sink_path
                 db_p.sink_format = sink_format
                 db_p.timezone = timezone
@@ -1047,6 +1106,8 @@ def api_save_pipeline(
                     name=name,
                     description=description,
                     source_path=source_path,
+                    source_type=source_type,
+                    source_config=source_config,
                     sink_path=sink_path,
                     sink_format=sink_format,
                     timezone=timezone,
@@ -1535,3 +1596,184 @@ async def api_model_download_status(request: Request, model_id: str):
         raise HTTPException(status_code=404, detail=f"Unknown model: {model_id}")
 
     return get_download_status(model_id)
+
+
+# --- Connectors ---
+
+@app.get("/connectors", response_class=HTMLResponse)
+def connectors_page(request: Request):
+    guard = _view_guard(request, "connectors.view")
+    if guard:
+        return guard
+    with Session(engine) as session:
+        connectors = session.exec(select(SavedConnector)).all()
+    connector_types = available_connectors()
+    connectors_json = {}
+    for c in connectors:
+        connectors_json[c.name] = json.dumps({
+            "id": c.id,
+            "name": c.name,
+            "connector_type": c.connector_type,
+            "description": c.description or "",
+            "config": c.config,
+            "created_at": c.created_at.isoformat() if c.created_at else "",
+            "updated_at": c.updated_at.isoformat() if c.updated_at else "",
+        })
+    return render(
+        request,
+        "connectors.html",
+        {
+            "active_page": "connectors",
+            "connectors": connectors,
+            "connector_types": connector_types,
+            "connectors_json": connectors_json,
+        }
+    )
+
+
+@app.post("/api/connectors", response_class=HTMLResponse)
+def api_save_connector(
+    request: Request,
+    name: str = Form(...),
+    connector_type: str = Form(...),
+    description: str = Form(""),
+    config: str = Form("{}"),
+    original_name: str = Form(""),
+):
+    try:
+        check_permission(request, "connectors.edit" if original_name else "connectors.create")
+        try:
+            config_dict = json.loads(config)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid JSON in config field")
+
+        with Session(engine) as session:
+            if original_name:
+                # Update existing connector
+                db_c = session.exec(select(SavedConnector).where(SavedConnector.name == original_name)).first()
+                if not db_c:
+                    raise HTTPException(status_code=404, detail="Connector not found")
+                db_c.name = name
+                db_c.connector_type = connector_type
+                db_c.description = description
+                db_c.config = config_dict
+                db_c.updated_at = datetime.utcnow()
+                session.add(db_c)
+            else:
+                # Create new connector
+                conflict = session.exec(select(SavedConnector).where(SavedConnector.name == name)).first()
+                if conflict:
+                    raise HTTPException(status_code=400, detail="Connector name already exists")
+                db_c = SavedConnector(
+                    name=name,
+                    connector_type=connector_type,
+                    description=description,
+                    config=config_dict,
+                )
+                session.add(db_c)
+            session.commit()
+
+        audit(request, "connector.update" if original_name else "connector.create", "connector", name)
+
+        # Return updated list partial
+        with Session(engine) as session:
+            connectors = session.exec(select(SavedConnector)).all()
+        connector_types = available_connectors()
+        connectors_json = {}
+        for c in connectors:
+            connectors_json[c.name] = json.dumps({
+                "id": c.id,
+                "name": c.name,
+                "connector_type": c.connector_type,
+                "description": c.description or "",
+                "config": c.config,
+                "created_at": c.created_at.isoformat() if c.created_at else "",
+                "updated_at": c.updated_at.isoformat() if c.updated_at else "",
+            })
+        response = render(
+            request,
+            "partials/connectors_list.html",
+            {
+                "connectors": connectors,
+                "connector_types": connector_types,
+                "connectors_json": connectors_json,
+            }
+        )
+        response.headers["HX-Trigger"] = "connector-saved"
+        return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/connectors/{name}", response_class=HTMLResponse)
+def api_delete_connector(request: Request, name: str, _perm: User = Depends(require_permission("connectors.delete"))):
+    try:
+        with Session(engine) as session:
+            db_c = session.exec(select(SavedConnector).where(SavedConnector.name == name)).first()
+            if not db_c:
+                raise HTTPException(status_code=404, detail="Connector not found")
+            session.delete(db_c)
+            session.commit()
+            audit(request, "connector.delete", "connector", name)
+
+        # Return updated list partial
+        with Session(engine) as session:
+            connectors = session.exec(select(SavedConnector)).all()
+        connector_types = available_connectors()
+        connectors_json = {}
+        for c in connectors:
+            connectors_json[c.name] = json.dumps({
+                "id": c.id,
+                "name": c.name,
+                "connector_type": c.connector_type,
+                "description": c.description or "",
+                "config": c.config,
+                "created_at": c.created_at.isoformat() if c.created_at else "",
+                "updated_at": c.updated_at.isoformat() if c.updated_at else "",
+            })
+        return render(
+            request,
+            "partials/connectors_list.html",
+            {
+                "connectors": connectors,
+                "connector_types": connector_types,
+                "connectors_json": connectors_json,
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class TestConnectionRequest(BaseModel):
+    connector_type: str
+    config: dict
+
+
+@app.post("/api/connectors/test")
+def api_test_connector(request: Request, body: TestConnectionRequest, _perm: User = Depends(require_permission("connectors.view"))):
+    """Test a connector configuration without saving it."""
+    try:
+        connector = get_connector(body.connector_type)
+        import time
+        start = time.time()
+        status = connector.test_connection(body.config)
+        latency = round((time.time() - start) * 1000, 1)
+        return {
+            "connected": status.connected,
+            "message": status.message,
+            "latency_ms": status.latency_ms or latency,
+            "details": status.details,
+        }
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        return {
+            "connected": False,
+            "message": str(e),
+            "latency_ms": None,
+            "details": {},
+        }
