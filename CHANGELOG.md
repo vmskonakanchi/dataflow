@@ -7,6 +7,35 @@ and this project aims to follow [Semantic Versioning](https://semver.org/spec/v2
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-07-28
+
+### Added
+
+**Connector SDK**
+- `Connector` abstract base class with a unified `read()` / `write()` / `test_connection()` / `metadata()` interface.
+- Auto-discovery registry: drop a Python file into `src/connectors/` and it registers itself automatically.
+- `FileConnector`: pluggable source/sink for local files, S3, GCS, and HTTP file endpoints (Parquet, Delta, JSON, CSV).
+- `HttpConnector`: manages DuckDB HTTP secrets supporting bearer-token, HTTP basic, and custom header authentication.
+
+**Pipeline Integration**
+- `PipelineConfig` extended with backward-compatible `source_type` and `source_config` fields.
+- Executor delegates source setup to `connector.read()` at runtime.
+- Saved connectors are resolved from the database at execution time — no hard-coded paths needed.
+- Sink extension validation: rejects `.csv` / `.json` outputs (Parquet/Delta only).
+
+**Database**
+- New `SavedConnector` table (`name`, `type`, config JSON, timestamps).
+- `Pipeline` table: `source_path` is now nullable; `source_type` and `source_config` columns added.
+- Alembic migration with automatic backfill for existing pipelines.
+
+**UI**
+- New **Connectors** page: list, create, edit, test connection, and delete saved connectors.
+- Pipeline wizard restructured into six tabs: Basics, Source & Sink, Execution, Transforms, Checks, Alerts.
+- Source tab: type dropdown + connector picker (file type allows an inline path override).
+- Sink tab: connector picker with path auto-fill.
+- Guard prevents using the same connector as both source and sink.
+- Sidebar navigation link with plug icon for the Connectors page.
+
 ## [0.1.0] — 2026-07-17
 
 First consolidated release of Dataflow: the core DuckDB data pipeline engine, web dashboard, and enterprise features.
@@ -44,5 +73,6 @@ First consolidated release of Dataflow: the core DuckDB data pipeline engine, we
 ### Security
 - Session cookies signed with an auto-generated secret; passwords hashed with bcrypt.
 
-[Unreleased]: https://github.com/vmskonakanchi/dataflow/compare/v0.1.0...main
+[Unreleased]: https://github.com/vmskonakanchi/dataflow/compare/v0.2.0...feat/connectors
+[0.2.0]: https://github.com/vmskonakanchi/dataflow/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/vmskonakanchi/dataflow/releases/tag/v0.1.0
